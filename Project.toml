@@ -12,7 +12,7 @@ EpiAwareADTools = "908e2895-a690-4874-a954-ca006cb9734d"
 PairPlots = "43a3c2be-4208-490b-832a-a21dcd55d7da"
 
 [compat]
-AlgebraOfGraphics = "0.12.13"
+AlgebraOfGraphics = "0.12.13, 0.13"
 CensoredDistributions = "0.2.22"
 ComposableTuringIDModels = "0.1.2"
 DataFramesMeta = "0.15.6"
