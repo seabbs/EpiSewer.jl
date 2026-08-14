@@ -106,7 +106,7 @@ export default defineConfig({
     sidebarDrawer: 'REPLACE_ME_DOCUMENTER_VITEPRESS_SIDEBAR_DRAWER',
     editLink: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/seabbs/EpiSewer.jl' }
+      { icon: 'github', link: 'https://github.com/EpiAware/EpiSewer.jl' }
     ],
     // Rendered as HTML: the standard DocumenterVitepress credit, preceded
     // by the EpiAware logo + org links when `ORG_BRANDING` is on in
