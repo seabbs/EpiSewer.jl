@@ -7,7 +7,7 @@
 // error (5xx / rate limit / network) is retried, then degraded to an unknown
 // count so the page still renders. Only a genuine 404 (misconfigured REPO)
 // throws, since re-running will not fix it.
-const REPO = "EpiAware/EpiSewer.jl";
+const REPO = "seabbs/EpiSewer.jl";
 const MAX_ATTEMPTS = 3;
 
 export default {

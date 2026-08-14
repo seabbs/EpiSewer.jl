@@ -60,7 +60,7 @@ _cfg(sym, default) = isdefined(@__MODULE__, sym) ?
 
 build_docs(
     EpiSewer;
-    repo = "EpiAware/EpiSewer.jl",
+    repo = "seabbs/EpiSewer.jl",
     authors = "Sam Abbott",
     deploy_url = nothing,
     pages = _cfg(:pages, ["Home" => "index.md"]),
