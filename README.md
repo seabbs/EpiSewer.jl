@@ -16,6 +16,34 @@ EpiSewer.jl provides a Bayesian generative model to estimate the effective repro
 
 The package replicates the modelling functionality of the EpiSewer R package by Adrian Lison. It estimates transmission dynamics from wastewater concentration measurements using MCMC sampling, with full uncertainty quantification.
 
+## The model in words
+
+This section walks through the model that EpiSewer.jl replicates, in plain language. A worked Julia example will follow once the components are implemented.
+
+### Data
+
+The model is driven by a time series of wastewater concentration measurements, ideally in gene copies per millilitre. Not every day needs a measurement: the model naturally accounts for missing or non-daily observations. Alongside the measurements, daily wastewater flow records are used to normalise the concentration signal for day-to-day variation in flow (for example due to rainfall). Optionally, confirmed case counts from the catchment area can be supplied; these calibrate the model so that the estimated number of infections roughly matches observed cases.
+
+### From data to signal
+
+Raw concentrations are first normalised by the daily flow, which removes much of the noise that a varying flow introduces into the raw signal. The normalised signal is then understood as a delayed and blurred trace of the infection process upstream: infected individuals begin to shed the pathogen some time after infection and continue to shed over a period of days, and the shed load is further blurred and delayed as it travels through the sewer network to the sampling site.
+
+### Assumptions
+
+To turn concentrations back into transmission dynamics we need a set of disease-specific distributions, typically taken from the literature: the generation time (the time between a primary infection and its secondary infections), the shedding load distribution (how much an average individual sheds over time), and, because the shedding load is usually expressed relative to symptom onset, the incubation period (the time between infection and symptom onset). All of these are discretised to a daily time step for use in the model.
+
+### The latent model
+
+Underlying the observations is a latent epidemic process. The number of new infections each day evolves according to a renewal process driven by a time-varying effective reproduction number, R_t. The reproduction number itself is allowed to vary smoothly over time, using a flexible smoothing model such as a Gaussian process or a random walk, so that we do not need to specify the trajectory in advance. The infection process also includes stochastic noise, capturing additional variability beyond what a deterministic renewal would imply.
+
+### The observation model
+
+The latent infections are mapped to an expected load by convolving the infection process with the shedding load distribution, and that expected load is in turn delayed through the sewer residence time before being divided by the flow to give an expected concentration. The observed concentrations are then modelled as this expected concentration corrupted by measurement noise. Together these pieces connect the observed wastewater concentrations to the hidden infection dynamics we want to estimate.
+
+### Estimation
+
+Combining the latent model and the observation model gives a full Bayesian generative model. Inference is performed with Hamiltonian MCMC sampling, which produces a full posterior distribution over every parameter. From that posterior we obtain R_t and the other transmission indicators — along with infections, expected load and concentration — together with credible intervals that quantify the uncertainty in every estimate.
+
 ## Derived from EpiSewer
 
 This package is a Julia port of the [EpiSewer](https://github.com/adrian-lison/EpiSewer) R package by Adrian Lison and colleagues. The original model is described in:
