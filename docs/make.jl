@@ -61,7 +61,7 @@ _cfg(sym, default) = isdefined(@__MODULE__, sym) ?
 build_docs(
     EpiSewer;
     repo = "EpiAware/EpiSewer.jl",
-    authors = "seabbs-bot",
+    authors = "Sam Abbott",
     deploy_url = nothing,
     pages = _cfg(:pages, ["Home" => "index.md"]),
     skip_notebooks = "--skip-notebooks" in ARGS ||

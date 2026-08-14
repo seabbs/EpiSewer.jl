@@ -18,3 +18,6 @@ ComposableTuringIDModels = "0.1.2"
 DataFramesMeta = "0.15.6"
 EpiAwareADTools = "0.2.1"
 PairPlots = "3.0.8"
+
+[workspace]
+projects = ["test", "docs"]

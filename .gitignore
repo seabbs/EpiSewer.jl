@@ -55,10 +55,8 @@ tune.json
 # away from being committed (#247).
 worktree-*
 worktrees/
-
-# Package-specific rules (preserved across updates).
-# Original EpiSewer R source and replication-prompt resources.
-.resources/
-# pi agent local state.
-.pi/
 # managed:end
+
+# Package-specific ignore rules (preserved across updates).
+.resources/
+.pi/
