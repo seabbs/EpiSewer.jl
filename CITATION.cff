@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "EpiSewer.jl"
+type: software
+authors:
+  - name: "seabbs-bot"
+repository-code: "https://github.com/EpiAware/EpiSewer.jl"
+url: "https://github.com/EpiAware/EpiSewer.jl"

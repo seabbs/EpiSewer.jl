@@ -1,0 +1,20 @@
+name = "EpiSewer"
+uuid = "2df4a3a2-2113-4925-824e-30cf3f139497"
+version = "0.1.0"
+authors = ["Sam Abbott <contact@samabbott.co.uk>"]
+
+[deps]
+AlgebraOfGraphics = "cbdf2221-f076-402e-a563-3d30da359d67"
+CensoredDistributions = "b2eeebe4-5992-4301-9193-7ebc9f62c855"
+ComposableTuringIDModels = "cbebd14a-101c-4997-a79f-d008ad7c07b2"
+DataFramesMeta = "1313f7d8-7da2-5740-9ea0-a2ca25f37964"
+EpiAwareADTools = "908e2895-a690-4874-a954-ca006cb9734d"
+PairPlots = "43a3c2be-4208-490b-832a-a21dcd55d7da"
+
+[compat]
+AlgebraOfGraphics = "0.12.13"
+CensoredDistributions = "0.2.22"
+ComposableTuringIDModels = "0.1.2"
+DataFramesMeta = "0.15.6"
+EpiAwareADTools = "0.2.1"
+PairPlots = "3.0.8"

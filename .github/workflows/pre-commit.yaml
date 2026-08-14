@@ -1,0 +1,25 @@
+# MANAGED by EpiAwarePackageTools.scaffold — do not edit by hand.
+name: pre-commit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    uses: EpiAware/.github/.github/workflows/runic-check.yml@0cd39d03a53c2561d36256f5cbbd4fd5ce31355b
+    # `runic-check.yml` does not install Runic itself — pre-commit's native
+    # `language: julia` builds the hook's own env from the
+    # `.pre-commit-config.yaml` `additional_dependencies` pin. Instead it
+    # greps this repo's `.pre-commit-config.yaml` for the literal string
+    # `Runic@1.7.0` and fails if absent, so this input and that
+    # pin must agree (single source: `1.7.0`).
+    with:
+      runic_version: '1.7.0'
+    secrets: inherit  # pragma: allowlist secret

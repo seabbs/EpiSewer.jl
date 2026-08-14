@@ -1,0 +1,43 @@
+# PACKAGE-OWNED — scaffold writes this once and never overwrites it.
+# The documentation environment: Documenter + DocumenterVitepress. Add
+# doc-only deps (e.g. plotting, DocumenterCitations) as the docs grow. The
+# package is pinned by path via `[sources]`; the kit is a docs dep too
+# (`docs/make.jl` calls `using EpiAwarePackageTools`), bounded in
+# `[compat]` like any other registered dep.
+#
+# With `ad = true`, also carries what the AD-backends tutorial page
+# executes against: the `ADFixtures` registry (path-pinned) plus the
+# benchmark and plotting stack. With `benchmarks = true`, also carries
+# `Plots` for the benchmark page's trend plot (lazily loaded; absent here,
+# the plot degrades to an `@info` note rather than failing the build).
+[deps]
+ADFixtures = "87deffd3-0d35-4a6b-a94a-2bf7fee064e7"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"
+DataFramesMeta = "1313f7d8-7da2-5740-9ea0-a2ca25f37964"
+DifferentiationInterfaceTest = "a82114a7-5aa3-49a8-9643-716bb13727a3"
+Markdown = "d6f4376e-aef5-505a-96c1-9c027394607a"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
+DocumenterVitepress = "4710194d-e776-4893-9690-8d956a29c365"
+EpiAwarePackageTools = "7aaea248-0d11-4a0d-a7dc-86da30abb951"
+Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
+EpiSewer = "2df4a3a2-2113-4925-824e-30cf3f139497"
+
+[sources]
+EpiSewer = {path = ".."}
+ADFixtures = {path = "../test/ADFixtures"}
+
+[compat]
+CairoMakie = "0.15"
+Chairmarks = "1"
+DataFramesMeta = "0.15"
+DifferentiationInterfaceTest = "0.9, 0.10, 0.11"
+Markdown = "1"
+Statistics = "1"
+Documenter = "1"
+DocumenterCitations = "1"
+DocumenterVitepress = "0.3"
+EpiAwarePackageTools = "0.3, 0.4"
+Literate = "2"

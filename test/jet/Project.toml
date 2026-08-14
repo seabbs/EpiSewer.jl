@@ -1,0 +1,20 @@
+# MANAGED by EpiAwarePackageTools.scaffold — do not edit by hand.
+# Isolated JET environment so JET's JuliaSyntax pin does not clash with the
+# main test deps. Add any extra packages JET needs to load the target here.
+[deps]
+EpiAwarePackageTools = "7aaea248-0d11-4a0d-a7dc-86da30abb951"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+EpiSewer = "2df4a3a2-2113-4925-824e-30cf3f139497"
+
+[sources]
+EpiSewer = {path = "../.."}
+
+# Pin JET to the 0.x minors this environment has actually been run against, so
+# a new minor (which is a breaking bump under Julia's 0.x semver) cannot
+# silently tighten static analysis and turn the managed check red without a
+# deliberate bump (see kit #77, #60, #73). Dependabot now watches this file
+# (see .github/dependabot.yml), so the bump arrives as a reviewable PR rather
+# than as drift between this pin and the one in ../Project.toml.
+[compat]
+EpiAwarePackageTools = "0.3, 0.4"
+JET = "0.11, 0.12"
