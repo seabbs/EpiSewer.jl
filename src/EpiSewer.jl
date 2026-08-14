@@ -10,6 +10,13 @@ using EpiAwareADTools
 using DataFramesMeta
 using AlgebraOfGraphics
 using PairPlots
+using CSV
+using DataFrames
+
+export example_data, example_distributions
+
+# Example data loader (Zurich SARS-CoV-2 wastewater data)
+include("data.jl")
 
 # Submodules for model components (to be filled in later)
 include("measurements.jl")
