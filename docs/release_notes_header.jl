@@ -7,7 +7,7 @@
 
 const RELEASE_NOTES_HEADER = """
 ```@meta
-EditURL = "https://github.com/EpiAware/EpiSewer.jl/releases"
+EditURL = "https://github.com/seabbs/EpiSewer.jl/releases"
 ```
 
 # Release notes

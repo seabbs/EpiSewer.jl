@@ -4,5 +4,5 @@ title: "EpiSewer.jl"
 type: software
 authors:
   - name: "seabbs-bot"
-repository-code: "https://github.com/EpiAware/EpiSewer.jl"
-url: "https://github.com/EpiAware/EpiSewer.jl"
+repository-code: "https://github.com/seabbs/EpiSewer.jl"
+url: "https://github.com/seabbs/EpiSewer.jl"
