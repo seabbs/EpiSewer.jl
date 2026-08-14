@@ -172,6 +172,7 @@ const PACKAGE_TUTORIALS = Pair{String, String}[]
 const PACKAGE_SECTIONS = Pair{String, Any}[
     "Development" => [
         "LLM-assisted development process" => "components/llm-process.md",
+        "Model components" => "components/model-components.md",
     ],
 ]
 
