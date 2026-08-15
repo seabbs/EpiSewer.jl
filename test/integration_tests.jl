@@ -149,6 +149,27 @@ end
     @test mdl.infection_model === inf
     @test mdl.observation_model === obs
 
-    # Passing only one of the two is an error.
-    @test_throws ErrorException EpiSewer.model(infection_model = inf)
+    # Overriding one component works: the other keeps its default.
+    mdl_override = EpiSewer.model(infection_model = inf)
+    @test mdl_override isa CT.IDModel
+    @test mdl_override.infection_model === inf
+    @test mdl_override.observation_model isa EpiSewer.Sewage.FlowNormalize
+end
+
+@testitem "EpiSewer.model accepts a custom infection model as default-arg override" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+    using Distributions
+
+    d = EpiSewer.example_data()
+    flow = Vector{Float64}(d.flows.flow[5:64])
+
+    # DirectInfections instead of the default Renewal.
+    inf = CT.DirectInfections(; Z = CT.RandomWalk(), initialisation = Normal())
+    mdl = EpiSewer.model(infection_model = inf, flow = flow)
+
+    @test mdl isa CT.IDModel
+    @test mdl.infection_model === inf
+    # The default observation chain is still assembled.
+    @test mdl.observation_model isa EpiSewer.Sewage.FlowNormalize
 end

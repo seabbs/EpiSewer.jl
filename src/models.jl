@@ -33,23 +33,34 @@ const _FlowNormalize = Sewage.FlowNormalize
 """
     model(; data = example_data(), distributions = example_distributions(),
         flow = data.flows.flow, lpc_prior = Normal(log(1e9), 0.5),
-        infection_model = nothing, observation_model = nothing) -> IDModel
+        infection_model = Renewal(generation_time = distributions.generation_dist,
+            rt = RandomWalk(), initialisation = Normal()),
+        observation_model = FlowNormalize(
+            LatentDelay(Ascertainment(NormalError(), lpc_prior),
+                distributions.shedding_dist),
+            flow)) -> IDModel
 
 Build the wastewater model as a composable `ComposableTuringIDModels.IDModel`
 (the EpiSewer README example). **Public but not exported** — call it as
 `EpiSewer.model(...)`, never as a bare `model(...)`.
 
-The returned model can be evaluated with
-`as_turing_model(EpiSewer.model(), y_t, n)` where `y_t` is the observed
-concentration series (length `n`, `missing` entries allowed) and `n` the
-number of time points.
+The two composable components — `infection_model` (an
+`AbstractInfectionModel`) and `observation_model` (an
+`AbstractObservationModel`) — are the model's interface. Each defaults to the
+README example assembly:
 
-When `infection_model` and `observation_model` are both supplied, the IDModel
-is assembled from those composable `ComposableTuringIDModels` components
-directly. Otherwise the default chain is built from the other arguments: a
-`Renewal` infection process (generation time from `distributions`, `R_t` as a
-`RandomWalk`) composed with the observation chain
-`FlowNormalize(LatentDelay(Ascertainment(NormalError(), lpc_prior), shedding_pmf), flow)`.
+  - `infection_model`: `Renewal(generation_time, rt = RandomWalk(),
+    initialisation = Normal())` — a renewal process driven by a
+    random-walk `R_t`.
+  - `observation_model`:
+    `FlowNormalize(LatentDelay(Ascertainment(NormalError(), lpc_prior),
+    shedding_pmf), flow)` — load-per-case scaling, shedding delay, flow
+    normalization, and a normal observation error.
+
+Override either (or both) by passing your own `ComposableTuringIDModels`
+component; the body is a single `IDModel(infection_model, observation_model)`
+call. The data/prior arguments (`data`, `distributions`, `flow`,
+`lpc_prior`) parameterize those defaults.
 
 # Arguments
 - `data`: NamedTuple of DataFrames (`measurements`, `flows`, `cases`) as
@@ -61,11 +72,10 @@ directly. Otherwise the default chain is built from the other arguments: a
   to the flows from `data`.
 - `lpc_prior`: the log-scale prior on the load shed per case (scaled onto
   expected infections by `Ascertainment`'s default `xexpy` transform).
-- `infection_model`: an optional `AbstractInfectionModel` composable to use as
-  the infection process (defaults to the `Renewal` described above).
-- `observation_model`: an optional `AbstractObservationModel` composable to use
-  as the observation chain (defaults to the flow-normalized chain described
-  above).
+- `infection_model`: the `AbstractInfectionModel` composable to use as the
+  infection process (defaults to the `Renewal` above).
+- `observation_model`: the `AbstractObservationModel` composable to use as the
+  observation chain (defaults to the flow-normalized chain above).
 
 # Example
 ```julia
@@ -81,37 +91,20 @@ function model(;
         distributions = example_distributions(),
         flow = Vector{Float64}(data.flows.flow),
         lpc_prior = Normal(log(1.0e9), 0.5),
-        infection_model = nothing,
-        observation_model = nothing,
-    )
-    if infection_model !== nothing && observation_model !== nothing
-        return IDModel(infection_model, observation_model)
-    end
-    if infection_model !== nothing || observation_model !== nothing
-        error(
-            "EpiSewer.model: pass both infection_model and observation_model, " *
-                "or neither"
-        )
-    end
-
-    gen = distributions.generation_dist
-    shed = distributions.shedding_dist
-
-    # Core infection process: renewal with a random-walk R_t.
-    default_infection = Renewal(
-        ; generation_time = gen, rt = RandomWalk(), initialisation = Normal()
-    )
-
-    # Observation chain: infections -> load -> delayed load -> concentrations.
-    default_obs = _FlowNormalize(
-        LatentDelay(
-            Ascertainment(NormalError(), lpc_prior),
-            shed,
+        infection_model = Renewal(
+            ;
+            generation_time = distributions.generation_dist,
+            rt = RandomWalk(), initialisation = Normal(),
         ),
-        flow,
+        observation_model = _FlowNormalize(
+            LatentDelay(
+                Ascertainment(NormalError(), lpc_prior),
+                distributions.shedding_dist,
+            ),
+            flow,
+        ),
     )
-
-    return IDModel(default_infection, default_obs)
+    return IDModel(infection_model, observation_model)
 end
 
 # Backwards-compatible alias for the previous name of the default assembly.
