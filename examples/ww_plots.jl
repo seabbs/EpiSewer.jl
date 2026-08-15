@@ -25,6 +25,11 @@ using DataFrames
 
 Random.seed!(42)
 
+# Parse the example concentration column ("NA" for unobserved days).
+_parse_conc(v) = let s = string(v)
+    (s == "NA" || s == "missing") ? missing : parse(Float64, s)
+end
+
 outdir = "docs/fits"
 mkpath(outdir)
 chainfile = joinpath(outdir, "ww_example_chains.jls")
@@ -33,9 +38,6 @@ chainfile = joinpath(outdir, "ww_example_chains.jls")
 function get_chain()
     if isfile(chainfile)
         return deserialize(chainfile)
-    end
-    _parse_conc(v) = let s = string(v)
-        (s == "NA" || s == "missing") ? missing : parse(Float64, s)
     end
     data = EpiSewer.example_data()
     y = Vector{Union{Missing, Float64}}(_parse_conc.(data.measurements.concentration))
@@ -102,6 +104,136 @@ if !isnothing(R_draws)
     @info "Saved R_t plot" path = "docs/fits/ww_plot_Rt.png"
 end
 
+# --- Generated-quantity extraction (concentration / load / infections) ------
+# The IDModel's returned quantities (generated_y_t, expected_y_t, I_t, Z_t) are
+# not stored as chain parameters, so `predict` cannot surface them on this
+# FlexiChains setup (it returns only the parameter keys + Extras). Instead we
+# condition the model on one posterior draw's latent parameters and evaluate
+# it: `DynamicPPL.condition` fixes rw_init/std/ϵ_t/init_incidence/lpc/σ and the
+# model runs forward deterministically, returning the exact generated
+# quantities. This reconstructs I_t / expected load / expected concentration
+# from the SAME model math that produced the fit, draw by draw.
+function _extract_generated(chn, mdl)
+    pnames = [string(k) for k in keys(chn)]
+    required = [
+        "Parameter(rw_init)", "Parameter(std)", "Parameter(ϵ_t)",
+        "Parameter(init_incidence)", "Parameter(Ascertainment.intercept)",
+        "Parameter(σ)",
+    ]
+    _missing_keys(required, pnames) !== nothing && return nothing
+    n_draw, n_chain = size(chn[:rw_init])
+    n = length(first(chn[Symbol("ϵ_t")])) + 1
+
+    I_draws = zeros(n_draw * n_chain, n)
+    pred_draws = zeros(n_draw * n_chain, n)
+    load_draws = zeros(n_draw * n_chain, n)
+    lpc = vec(chn[Symbol("Ascertainment.intercept")])
+
+    idx = 0
+    for c in 1:n_chain, d in 1:n_draw
+        idx += 1
+        cond = Turing.DynamicPPL.condition(
+            mdl,
+            (
+                rw_init = chn[:rw_init][d, c],
+                std = chn[:std][d, c],
+                Symbol("ϵ_t") => chn[Symbol("ϵ_t")][d, c],
+                init_incidence = chn[:init_incidence][d, c],
+                Symbol("Ascertainment.intercept") =>
+                    chn[Symbol("Ascertainment.intercept")][d, c],
+                Symbol("σ") => chn[Symbol("σ")][d, c],
+            ),
+        )
+        out = cond()
+        I_draws[idx, :] .= out.I_t
+        # generated_y_t may keep `missing` at unobserved/forecast positions.
+        pred_draws[idx, :] .= coalesce.(out.generated_y_t, NaN)
+        # Expected load pre-delay: Ascertainment's default transform is
+        # xexpy (Y_t .* exp(x)), so load_t = I_t .* exp(lpc).
+        load_draws[idx, :] .= out.I_t .* exp(lpc[idx])
+    end
+    return (; I_draws, pred_draws, load_draws)
+end
+
+function _median_ci(m)
+    # Drop NaN rows (forecast blanks / missing at unobserved days) per column
+    # before summarising.
+    n_pts = size(m, 2)
+    med = Vector{Float64}(undef, n_pts)
+    lo = Vector{Float64}(undef, n_pts)
+    hi = Vector{Float64}(undef, n_pts)
+    for i in 1:n_pts
+        col = m[:, i]
+        col = col[.!isnan.(col)]
+        if isempty(col)
+            med[i] = lo[i] = hi[i] = NaN
+        else
+            med[i] = median(col)
+            lo[i] = quantile(col, 0.025)
+            hi[i] = quantile(col, 0.975)
+        end
+    end
+    return med, lo, hi
+end
+
+function _series_plot(title, ylabel, med, lo, hi)
+    t = 1:length(med)
+    fig = Figure(size = (900, 420))
+    ax = Axis(fig[1, 1]; title = title, xlabel = "day", ylabel = ylabel)
+    band!(ax, t, lo, hi; color = (:steelblue, 0.3), label = "95% CI")
+    lines!(ax, t, med; color = :steelblue, label = "median")
+    axislegend(ax; position = :lt)
+    return fig
+end
+
+# Data + model needed for the conditional evaluation.
+_expr_data = EpiSewer.example_data()
+_expr_y = Vector{Union{Missing, Float64}}(_parse_conc.(_expr_data.measurements.concentration))
+_expr_flow = Vector{Float64}(_expr_data.flows.flow)
+_expr_mdl = as_turing_model(EpiSewer.model(flow = _expr_flow), _expr_y, length(_expr_y))
+
+_gen = _extract_generated(chn, _expr_mdl)
+if !isnothing(_gen)
+    # --- Infections over time ---
+    I_med, I_lo, I_hi = _median_ci(_gen.I_draws)
+    save(
+        joinpath(outdir, "ww_plot_infections.png"),
+        _series_plot(
+            "Estimated infections per day", "infections", I_med, I_lo, I_hi,
+        ),
+    )
+    @info "Saved infections plot" path = "docs/fits/ww_plot_infections.png"
+
+    # --- Expected load over time ---
+    L_med, L_lo, L_hi = _median_ci(_gen.load_draws)
+    save(
+        joinpath(outdir, "ww_plot_load.png"),
+        _series_plot(
+            "Expected pathogen load per day", "expected load", L_med, L_lo, L_hi,
+        ),
+    )
+    @info "Saved load plot" path = "docs/fits/ww_plot_load.png"
+
+    # --- Concentration fit: observed vs posterior predictive ---
+    p_med, p_lo, p_hi = _median_ci(_gen.pred_draws)
+    t = 1:length(p_med)
+    fig = Figure(size = (900, 420))
+    ax = Axis(
+        fig[1, 1]; title = "Wastewater concentration fit",
+        xlabel = "day", ylabel = "concentration (gc/mL)",
+    )
+    band!(ax, t, p_lo, p_hi; color = (:steelblue, 0.3), label = "95% CI")
+    lines!(ax, t, p_med; color = :steelblue, label = "median")
+    # Observed concentrations (skipping missing) as points.
+    obs_t = findall(!ismissing, _expr_y)
+    scatter!(ax, obs_t, collect(skipmissing(_expr_y)); color = :black, markersize = 4, label = "observed")
+    axislegend(ax; position = :rt)
+    save(joinpath(outdir, "ww_plot_concentration.png"), fig)
+    @info "Saved concentration plot" path = "docs/fits/ww_plot_concentration.png"
+else
+    @warn "Generated-quantity extraction skipped: required chain parameters missing."
+end
+
 # --- Prior vs posterior PairPlots for key scalar parameters -------------------
 # Key scalar params: the load-per-case, observation noise, RW step std.
 pnames = [string(k) for k in keys(chn)]
@@ -123,9 +255,6 @@ if length(key_names) >= 2
     end
 
     # Prior sample of the same parameters from the model.
-    _parse_conc(v) = let s = string(v)
-        (s == "NA" || s == "missing") ? missing : parse(Float64, s)
-    end
     data = EpiSewer.example_data()
     y = Vector{Union{Missing, Float64}}(_parse_conc.(data.measurements.concentration))
     flow = Vector{Float64}(data.flows.flow)

@@ -124,6 +124,19 @@ Prior (grey) vs posterior (blue) densities for the key scalar parameters:
 
 <img src="./docs/fits/ww_pairplot_prior_posterior.png" width="100%" alt="Prior vs posterior" />
 
+The observed concentrations versus the model's posterior-predictive fit
+(black: observed, blue band: 95% CI):
+
+<img src="./docs/fits/ww_plot_concentration.png" width="100%" alt="Concentration fit" />
+
+Posterior median and 95% CI for the expected pathogen load per day:
+
+<img src="./docs/fits/ww_plot_load.png" width="100%" alt="Expected load" />
+
+Posterior median and 95% CI for the estimated infections per day:
+
+<img src="./docs/fits/ww_plot_infections.png" width="100%" alt="Infections" />
+
 <!-- standard-sections:start -->
 <!-- MANAGED by EpiAwarePackageTools.scaffold — do not edit between the
      markers. These standard sections are re-rendered on every update;
