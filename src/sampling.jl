@@ -1,3 +1,9 @@
+"""
+    EpiSewer.Sampling
+
+Sampling components for the EpiSewer port: outlier detection and
+sample-batch effects in wastewater measurements (`MeasurementOutliers`).
+"""
 module Sampling
 
 # Sampling-module components for the EpiSewer port.
@@ -7,10 +13,11 @@ module Sampling
 # the corresponding `as_turing_model` method, so it can be composed with the
 # rest of the EpiAware ecosystem.
 
-using Turing
-using DynamicPPL
-using Distributions
-using ComposableTuringIDModels
+using Turing: Turing
+using DynamicPPL: DynamicPPL, @model, to_submodel
+using Distributions: Distributions, Beta, ContinuousUnivariateDistribution,
+    Distribution, Normal, mean
+using ComposableTuringIDModels: ComposableTuringIDModels, HalfNormal
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel
 using ComposableTuringIDModels: AbstractObservationModel, AbstractObservationErrorModel,
     generate_observation_error_priors, observation_error, _at

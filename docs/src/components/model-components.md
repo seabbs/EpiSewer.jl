@@ -26,11 +26,11 @@ missing.
 | sampling | `sample_effects` | Batch effects (weekday, age-of-sample) | `Stratify` (per-batch latent process) can represent grouped effects | covered (via `Stratify`) |
 | sewage | `flows_observe` | Flow-normalise concentrations using daily flow | `FlowNormalize` in `src/sewage.jl` — rescales observed and expected concentrations by `flow ./ reference_flow` before delegating to the wrapped error model | covered (implemented) |
 | sewage | `residence_dist_assume` | Convolve infection-shedding signal through a sewer residence-time distribution | `LatentDelay` (discrete convolution with a PMF) | covered (via `LatentDelay`) |
-| shedding | `incubation_dist_assume` | Disease-specific discretised incubation period | `LatentDelay` with a PMF from `CensoredDistributions` (`get_discrete_gamma`) | covered |
+| shedding | `incubation_dist_assume` | Disease-specific discretised incubation period | `LatentDelay` with a PMF from `CensoredDistributions` | covered |
 | shedding | `shedding_dist_assume` | Shedding load distribution (relative to symptom onset or infection) | `LatentDelay` with the shedding-load PMF; discretisation via `CensoredDistributions` | covered |
 | shedding | `load_per_case_calibrate` | Calibrate shed load per case against observed cases | `LoadPerCase` in `src/shedding.jl` (latent-stage transform, `expected_load = I_t .* load_per_case`), or `Ascertainment` (observation-stage scaling) | covered (implemented) |
 | shedding | `load_variation_estimate` | Individual-level shedding-load overdispersion | Overdispersion via `NegativeBinomialError` (dispersion estimated) | covered (via `NegativeBinomialError`) |
-| infections | `generation_dist_assume` | Generation-time distribution between infections | `Renewal(generation_time = pmf, ...)`; PMF from `CensoredDistributions` (`get_discrete_gamma_shifted`) | covered |
+| infections | `generation_dist_assume` | Generation-time distribution between infections | `Renewal(generation_time = pmf, ...)`; PMF from `CensoredDistributions` | covered |
 | infections | `R_estimate_gp` / `R_estimate_rw` / `R_estimate_spline` | Flexible `R_t` smoothing | `HilbertSpaceGP` / `ExactGP` (GP), `RandomWalk` (RW), `AR` / spline-like trend for changepoint | covered |
 | infections | `seeding_estimate_rw` | Initial infection seeding | `ImportedCases` / seeded initialisation inside `Renewal` | covered |
 | infections | `infection_noise_estimate` | Stochastic infection noise (overdispersion) | Overdispersion via `NegativeBinomialError` on observed infections | covered |
@@ -52,9 +52,9 @@ status column above.
 
 ## Discretisation via CensoredDistributions
 
-EpiSewer ships its own custom discretisation helpers (e.g.
-`get_discrete_gamma_shifted`, `get_discrete_gamma`). In this package we instead
-use [`CensoredDistributions.jl`](https://epiaware.org/CensoredDistributions.jl)
-for discretising continuous distributions into the PMFs the `Renewal` and
-`LatentDelay` components consume (essentially a daily-interval discretisation
-of generation, incubation, and shedding-load distributions).
+EpiSewer ships its own custom discretisation helpers. In this package we
+instead use [`CensoredDistributions.jl`](https://epiaware.org/CensoredDistributions.jl)
+— `double_interval_censored` (primary within-day averaging plus daily
+interval censoring) with the tail renormalised by `Distributions.truncated` —
+to build the daily PMFs the `Renewal` and `LatentDelay` components consume
+(`EpiSewer.example_distributions()`).

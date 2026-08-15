@@ -1,3 +1,9 @@
+"""
+    EpiSewer.Shedding
+
+Shedding components for the EpiSewer port: incubation and shedding-load
+distributions, and load-per-case calibration (`LoadPerCase`).
+"""
 module Shedding
 
 # Shedding-module components for the EpiSewer port.
@@ -6,10 +12,10 @@ module Shedding
 # component implements the corresponding `as_turing_model` method so it can be
 # composed with the rest of the EpiAware ecosystem.
 
-using Turing
-using DynamicPPL
-using Distributions
-using ComposableTuringIDModels
+using Turing: Turing
+using DynamicPPL: DynamicPPL, @model
+using Distributions: Distributions, Distribution, LogNormal
+using ComposableTuringIDModels: ComposableTuringIDModels, AbstractComposableModel
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel
 
 export LoadPerCase

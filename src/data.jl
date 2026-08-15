@@ -4,19 +4,6 @@
 # (see `.resources/EpiSewer/` for the original source, and
 # `data/raw/extract_zurich.R` for how the CSVs were produced) so the README
 # modelling example can be reproduced from Julia.
-#
-# The data are original EpiSewer R package example data (Zurich, provided by
-# EAWAG, CC BY 4.0 license). `example_data()` returns a NamedTuple of
-# DataFrames:
-#   - measurements: date, concentration (gc/mL)
-#   - flows:        date, flow (mL/day)
-#   - cases:        date, cases (cases/day)
-# and `example_distributions()` returns the discretised PMFs for the model
-# assumptions as plain vectors:
-#   - generation_dist, shedding_dist, incubation_dist (days since onset)
-
-using CSV
-using DataFrames
 
 const _EXAMPLE_DATA_DIR = joinpath(@__DIR__, "..", "data", "example_zurich")
 
@@ -27,6 +14,12 @@ Load the Zurich SARS-CoV-2 wastewater example data into a NamedTuple of
 DataFrames (`measurements`, `flows`, `cases`). The `date` column is a `String`
 in ISO `YYYY-MM-DD` format and `concentration` may contain `missing` values
 for unobserved days.
+
+# Example
+```@example example_data
+d = EpiSewer.example_data()
+size(d.measurements)
+```
 """
 function example_data()
     measurements = CSV.read(
@@ -53,22 +46,29 @@ end
 """
     example_distributions() -> NamedTuple
 
-Discretised PMFs for the EpiSewer example model assumptions, generated on
-request from the continuous distributions used in the EpiSewer README example
-(via `CensoredDistributions`/`get_discrete_gamma*`): `generation_dist`,
-`shedding_dist`, and `incubation_dist`, each indexed by day. The shedding load
-distribution is relative to symptom onset.
+Discretised daily-delay PMFs for the EpiSewer example model assumptions:
+`generation_dist`, `shedding_dist`, and `incubation_dist` (each indexed by
+day). Built on request from the continuous distributions used in the EpiSewer
+README example via CensoredDistributions' `double_interval_censored` (primary
+within-day averaging plus daily interval censoring) with the tail renormalised
+by `Distributions.truncated`:
 
-The values reproduce the discretisations shipped with the EpiSewer R package
-example (generation: shifted Gamma mean 3, sd 2.4; shedding load: Gamma shape
-0.929639, scale 7.241397; incubation: Gamma shape 8.5, scale 0.4).
+  - generation: shifted Gamma mean 3, sd 2.4
+  - shedding load: Gamma shape 0.929639, scale 7.241397
+  - incubation: Gamma shape 8.5, scale 0.4
+
+# Example
+```@example example_distributions
+d = EpiSewer.example_distributions()
+length(d.generation_dist)
+```
 """
 function example_distributions()
-    return (
-        generation_dist = get_discrete_gamma_shifted(3.0, 2.4; maxX = 15),
-        shedding_dist = get_discrete_gamma(
-            shape = 0.929639, scale = 7.241397; maxX = 38
-        ),
-        incubation_dist = get_discrete_gamma(shape = 8.5, scale = 0.4; maxX = 8),
-    )
+    # Discretised Gamma PMF: mass of the doubly interval-censored Gamma in the
+    # daily bins [k, k+1), right-truncated at maxX (truncation renormalises).
+    pmf(dist; maxX) = [pdf(truncated(double_interval_censored(dist; interval = 1); upper = maxX), k) for k in 0:(maxX - 1)]
+    generation_dist = pmf(Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)); maxX = 15)
+    shedding_dist = pmf(Gamma(0.929639, 7.241397); maxX = 38)
+    incubation_dist = pmf(Gamma(8.5, 0.4); maxX = 8)
+    return (; generation_dist, shedding_dist, incubation_dist)
 end

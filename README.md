@@ -1,4 +1,4 @@
-# episewer <img src="docs/src/assets/logo.svg" width="150" alt="episewer logo" align="right">
+# EpiSewer.jl <img src="docs/src/assets/logo.svg" width="150" alt="episewer logo" align="right">
 
 <!-- badges:start -->
 | **Documentation** | **Build Status** | **Code Quality** | **License & DOI** | **Downloads** |
@@ -111,7 +111,7 @@ observed *data* and is passed through the observation-data contract at
 ### Worked example: fit and plots
 
 The full worked example (NUTS fit with 2 chains on 2 threads, then the
-README plots) lives in [`examples/`](examples/):
+README plots) lives in [`examples/`](https://github.com/seabbs/EpiSewer.jl/tree/main/examples):
 
 ```sh
 julia --project=. --threads=2 examples/ww_fit_example.jl   # NUTS fit + diagnostics
@@ -139,6 +139,16 @@ Posterior median and 95% CI for the expected pathogen load per day:
 Posterior median and 95% CI for the estimated infections per day:
 
 <img src="./docs/fits/ww_plot_infections.png" width="100%" alt="Infections" />
+
+## Related packages
+
+- [ComposableTuringIDModels.jl](https://github.com/EpiAware/ComposableTuringIDModels.jl): composable ID models built on Turing.
+- [CensoredDistributions.jl](https://github.com/EpiAware/CensoredDistributions.jl): discretised and censored distributions for delay processes.
+- [EpiAwareADTools.jl](https://github.com/EpiAware/EpiAwareADTools.jl): automatic-differentiation tooling for the EpiAware ecosystem.
+
+## Documentation
+
+Full documentation is hosted at [seabbs.github.io/EpiSewer.jl](https://seabbs.github.io/EpiSewer.jl/stable/), including the model-components table and a page recording the LLM-assisted development process.
 
 <!-- standard-sections:start -->
 <!-- MANAGED by EpiAwarePackageTools.scaffold — do not edit between the

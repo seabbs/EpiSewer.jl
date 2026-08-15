@@ -4,20 +4,16 @@ module EpiSewer
 # Original: https://github.com/adrian-lison/EpiSewer
 # Paper: https://doi.org/10.1038/s41467-026-75380-3
 
-using ComposableTuringIDModels
-using CensoredDistributions
-using EpiAwareADTools
-using DataFramesMeta
-using AlgebraOfGraphics
-using PairPlots
-using CSV
-using DataFrames
-
-export example_data, example_distributions,
-    get_discrete_gamma, get_discrete_gamma_shifted, ww_idmodel
-
-# Discretised distribution helpers (get_discrete_gamma, get_discrete_gamma_shifted)
-include("distributions.jl")
+using AlgebraOfGraphics: AlgebraOfGraphics
+using CSV: CSV
+using CensoredDistributions: CensoredDistributions, double_interval_censored
+using ComposableTuringIDModels: ComposableTuringIDModels, Renewal, RandomWalk,
+    LatentDelay, Ascertainment, IDModel
+using DataFrames: DataFrames, DataFrame
+using DataFramesMeta: DataFramesMeta
+using Distributions: Distributions, Gamma, Normal, pdf, truncated
+using EpiAwareADTools: EpiAwareADTools
+using PairPlots: PairPlots
 
 # Example data loader (Zurich SARS-CoV-2 wastewater data)
 include("data.jl")

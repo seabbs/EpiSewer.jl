@@ -1,3 +1,10 @@
+"""
+    EpiSewer.Sewage
+
+Sewage-system components for the EpiSewer port: flow normalization of
+concentration signals (`FlowNormalize`) and sewer residence-time
+distributions.
+"""
 module Sewage
 
 # Sewage-module components for the EpiSewer port.
@@ -7,10 +14,10 @@ module Sewage
 # the corresponding `as_turing_model` method, so it can be composed with the
 # rest of the EpiAware ecosystem.
 
-using Turing
-using DynamicPPL
-using Distributions
-using ComposableTuringIDModels
+using Turing: Turing
+using DynamicPPL: DynamicPPL, @model
+using Distributions: Distributions
+using ComposableTuringIDModels: ComposableTuringIDModels
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel
 using ComposableTuringIDModels: AbstractObservationModel, TransformObservationModel
 

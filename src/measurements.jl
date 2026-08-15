@@ -1,3 +1,10 @@
+"""
+    EpiSewer.Measurements
+
+Concentration measurement components for the EpiSewer port: observation
+error models for wastewater concentrations (incl. `LOD` left-censoring at
+the detection limit and `LogNormalError` relative noise).
+"""
 module Measurements
 
 # Measurement-module components for the EpiSewer port.
@@ -7,10 +14,12 @@ module Measurements
 # the corresponding `as_turing_model` method, so it can be composed with the
 # rest of the EpiAware ecosystem.
 
-using Turing
-using DynamicPPL
-using Distributions
-using ComposableTuringIDModels
+using Turing: Turing
+using DynamicPPL: DynamicPPL, @model
+using Distributions: Distributions, LogNormal, censored
+using ComposableTuringIDModels: ComposableTuringIDModels,
+    AbstractObservationErrorModel, AbstractObservationModel, BinomialError,
+    HalfNormal, NormalError, TransformObservationModel
 import ComposableTuringIDModels: as_turing_model
 import ComposableTuringIDModels: generate_observation_error_priors, observation_error,
     as_turing_submodel

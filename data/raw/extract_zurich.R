@@ -37,7 +37,7 @@ write_zurich_table(zurich$cases, "cases.csv")
 # The assumption PMFs (generation / incubation / shedding load) are no longer
 # stored: they are generated on demand by `EpiSewer.example_distributions()`
 # from the continuous distributions via CensoredDistributions.jl
-# (`get_discrete_gamma_shifted(3.0, 2.4)` / `get_discrete_gamma(shape, scale)`).
+# (`double_interval_censored` + `Distributions.truncated`).
 # The R parameter values used there match the original ww_assumptions object:
 #   generation: shifted Gamma mean = 3, sd = 2.4
 #   shedding load: Gamma shape = 0.929639, scale = 7.241397

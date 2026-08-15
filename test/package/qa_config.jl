@@ -23,10 +23,10 @@ const QA_CONFIG = (
     aqua = (;),
 
     # ExplicitImports `ignore`: symbols the main module legitimately imports
-    # non-publicly. Tuple of Symbols, e.g. (:_internal_helper,). Package
-    # extensions are handled automatically (#189), so their import lists do not
-    # need listing here.
-    ei_ignore = (),
+    # non-publicly. `read` (CSV) and `PriorLike`/`_at`
+    # (ComposableTuringIDModels) are not exported upstream but are part of
+    # those packages' public API in practice.
+    ei_ignore = (:read, :PriorLike, :_at),
 
     # Docstring `crossref_ignore`: upstream names docstrings link to via
     # `[`name`](@ref)`, e.g. (:pdf, :cdf, :logpdf).

@@ -3,7 +3,7 @@ using TestItemRunner
 
 @testitem "example_data loads Zurich measurements, flows, cases" begin
     using DataFrames
-    d = example_data()
+    d = EpiSewer.example_data()
     @test d isa NamedTuple
     @test (:measurements, :flows, :cases) ⊆ keys(d)
     @test nrow(d.measurements) == 120
@@ -16,13 +16,20 @@ using TestItemRunner
 end
 
 @testitem "example_distributions returns discretised PMFs" begin
-    dist = example_distributions()
+    dist = EpiSewer.example_distributions()
     @test (:generation_dist, :shedding_dist, :incubation_dist) ⊆ keys(dist)
     @test length(dist.generation_dist) == 15
-    @test length(dist.shedding_dist) == 39
-    @test length(dist.incubation_dist) == 9
+    @test length(dist.shedding_dist) == 38
+    @test length(dist.incubation_dist) == 8
     @test dist.generation_dist isa Vector{Float64}
     @test all(>=(0), dist.generation_dist)
     @test all(>=(0), dist.shedding_dist)
     @test all(>=(0), dist.incubation_dist)
+end
+
+@testitem "example data and distributions are public but not exported" begin
+    @test isdefined(EpiSewer, :example_data)
+    @test isdefined(EpiSewer, :example_distributions)
+    @test !(:example_data in names(EpiSewer))
+    @test !(:example_distributions in names(EpiSewer))
 end

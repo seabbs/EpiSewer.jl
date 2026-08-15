@@ -1,39 +1,15 @@
-# Default wastewater model assembly (the EpiSewer README example expressed as
-# a composable IDModel).
+# Composable model front end: the README example as an `IDModel`.
 #
-# The README model maps unobserved infections to observed flow-normalized
-# concentrations through a chain of observation-model wrappers, all composed
-# with ComposableTuringIDModels' `IDModel(infection_model, observation_model)`:
+# `EpiSewer.model()` returns `IDModel(infection_model, observation_model)`
+# (ComposableTuringIDModels). Defaults assemble the EpiSewer README example:
+# a `Renewal` infection process with random-walk `R_t`, and an observation
+# chain `Ascertainment(LatentDelay(FlowNormalize(LogNormalError()), shed),
+# lpc)` — per-case load scaling, shedding delay, flow division (gc/day ->
+# gc/mL, via the thin `FlowNormalize` delegating to the ecosystem's
+# `TransformObservationModel`), and relative (CV) log-normal noise.
 #
-#   IDModel(
-#     Infection model:
-#       Renewal(generation_time, rt = RandomWalk(), initialisation = Normal()),
-#     Observation chain (wrappers apply inward to the infection series I_t):
-#       Ascertainment(                # load-per-case scaling: I_t * exp(lpc)
-#         LatentDelay(                # shedding delay: convolve load with PMF
-#           FlowNormalize(            # THIN: divide load by flow -> concentration
-#             LogNormalError()),      # relative (CV) observation noise
-#           shedding_pmf),
-#         Normal(log_lpc, σ_lpc))
-#
-# The observation model receives `(y_t, I_t)` from the IDModel composite — the
-# expected observations are the infection series — and each wrapper transforms
-# them inward: Ascertainment multiplies by the per-case load, LatentDelay
-# convolved-delays the load with the shedding-load PMF (truncating the expected
-# series to the tail), and the thin FlowNormalize divides the delayed load by
-# the daily flow (gc/day -> gc/mL) via the ecosystem's TransformObservationModel
-# before the LogNormalError scores the raw concentrations with coefficient-of-
-# variation noise. This is the same chain EpiSewer's `sewer_job` builds
-# (generation -> shedding -> sewage -> observation), using only ecosystem +
-# package components.
-#
-# NOTE: the daily flow is DATA, passed at `as_turing_model` time through the
-# observation-data contract `y_t = (y = concentrations, flow = flow_vector)` —
-# never stored on the model (see `Sewage.FlowNormalize`).
-
-using ComposableTuringIDModels: Renewal, RandomWalk, LatentDelay,
-    Ascertainment, IDModel
-using Distributions: Normal
+# The daily flow is DATA, passed through the observation-data contract
+# `y_t = (y = concentrations, flow = flow_vector)` at `as_turing_model` time.
 
 const _FlowNormalize = Sewage.FlowNormalize
 
@@ -52,36 +28,18 @@ Build the wastewater model as a composable `ComposableTuringIDModels.IDModel`
 (the EpiSewer README example). **Public but not exported** — call it as
 `EpiSewer.model(...)`, never as a bare `model(...)`.
 
-The two composable components — `infection_model` (an
-`AbstractInfectionModel`) and `observation_model` (an
-`AbstractObservationModel`) — are the model's interface. Each defaults to the
-README example assembly:
-
-  - `infection_model`: `Renewal(generation_time, rt = RandomWalk(),
-    initialisation = Normal())` — a renewal process driven by a
-    random-walk `R_t`.
-  - `observation_model`:
-    `Ascertainment(LatentDelay(FlowNormalize(LogNormalError()),
-    shedding_pmf), lpc_prior)` — load-per-case scaling, shedding delay, flow
-    normalization (load/flow -> concentration via the thin `FlowNormalize`),
-    and a log-normal observation error (relative coefficient-of-variation
-    noise). Raw concentrations (gc/mL) are passed directly as `y_t`.
-
-The **flow is data**: pass it through the observation-data contract at
-`as_turing_model` time as `y_t = (y = concentrations, flow = flow_vector)`,
-not as a `model()` argument.
-
-Override either (or both) by passing your own `ComposableTuringIDModels`
-component; the body is a single `IDModel(infection_model, observation_model)`
-call. The data/prior arguments (`data`, `distributions`, `lpc_prior`)
-parameterize those defaults.
+`infection_model` and `observation_model` are the composable interface; each
+defaults to the README example assembly. The data/prior arguments (`data`,
+`distributions`, `lpc_prior`) parameterize those defaults. The flow is data:
+pass it through the observation-data contract at `as_turing_model` time as
+`y_t = (y = concentrations, flow = flow_vector)`, not as a `model()` argument.
 
 # Arguments
 - `data`: NamedTuple of DataFrames (`measurements`, `flows`, `cases`) as
-  returned by [`example_data`](@ref).
+  returned by `EpiSewer.example_data()`.
 - `distributions`: NamedTuple of discretised PMFs (`generation_dist`,
   `shedding_dist`, `incubation_dist`) as returned by
-  [`example_distributions`](@ref).
+  `EpiSewer.example_distributions()`.
 - No `flow` argument: the daily flow series (mL/day) is data passed at
   `as_turing_model` time via `y_t = (y = concentrations, flow = flow_vector)`
   (see [`Sewage.FlowNormalize`](@ref)). Use the flows from `example_data()`
@@ -99,8 +57,8 @@ parameterize those defaults.
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
 import ComposableTuringIDModels: as_turing_model
-d = example_data()
-# The series must be longer than the shedding-load PM (>=38 days, the
+d = EpiSewer.example_data()
+# The series must be longer than the shedding-load PMF (>=38 days, the
 # LatentDelay lower bound); use the full 120-day series with missing kept.
 y = d.measurements.concentration                       # Union{Missing, Float64}
 flow = Vector{Float64}(d.flows.flow)                   # mL/day, data
@@ -134,6 +92,3 @@ function model(;
     )
     return IDModel(infection_model, observation_model)
 end
-
-# Backwards-compatible alias for the previous name of the default assembly.
-ww_idmodel(args...; kwargs...) = model(args...; kwargs...)

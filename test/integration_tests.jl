@@ -6,16 +6,15 @@ using TestItemRunner
 # end-to-end via lightweight prior (predictive) sampling.
 #
 # The model mirrors the EpiSewer README example:
-#   Renewal (generation time, R_t ~ RandomWalk)   -> infections I_t   (core)
-#   Ascertainment (per-case shed load)            -> expected load    (ecosystem)
-#   LatentDelay (shedding-load PMF)               -> delayed load     (ecosystem)
-#   FlowNormalize(NormalError, flow)              -> observed concerts (ours, wraps core)
+#   Renewal (generation time, R_t ~ RandomWalk)   -> infections I_t
+#   Ascertainment (per-case shed load)            -> expected load
+#   LatentDelay (shedding-load PMF)               -> delayed load
+#   FlowNormalize(LogNormalError())               -> observed concentrations
 #
-# `ww_idmodel(...)` assembles this chain as `IDModel(infection_model,
-# observation_model)`; the observation model receives `(y_t, I_t)` from the
-# composite and each wrapper transforms the expected series inward.
+# `EpiSewer.model(...)` assembles this as `IDModel(infection_model,
+# observation_model)`.
 
-@testitem "ww_idmodel builds a composable IDModel that samples on example data" begin
+@testitem "EpiSewer.model builds a composable IDModel that samples on example data" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
     using Distributions, Turing, Random
@@ -36,7 +35,7 @@ using TestItemRunner
     flow = Vector{Float64}(d.flows.flow[sub])
 
     Random.seed!(42)
-    mdl = EpiSewer.ww_idmodel()
+    mdl = EpiSewer.model()
 
     # It is an IDModel composing a Renewal with the flow-normalized chain.
     @test mdl isa CT.IDModel
@@ -51,12 +50,12 @@ using TestItemRunner
     @test n > length(EpiSewer.example_distributions().shedding_dist)
 end
 
-@testitem "ww_idmodel defaults build on the full example data" begin
+@testitem "EpiSewer.model defaults build on the full example data" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
 
     d = EpiSewer.example_data()
-    mdl = EpiSewer.ww_idmodel()  # no flow argument: flow is data
+    mdl = EpiSewer.model()  # no flow argument: flow is data
 
     @test mdl isa CT.IDModel
     # The default observation chain is Ascertainment(LatentDelay(FlowNormalize(
@@ -83,7 +82,7 @@ end
     @test mdl !== nothing
 end
 
-@testitem "Composable model also exercises full ww_idmodel via direct evaluation" begin
+@testitem "Composable model also exercises full EpiSewer.model via direct evaluation" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
     using Distributions, Random
@@ -95,7 +94,7 @@ end
     flow = Vector{Float64}(d.flows.flow[5:64])
 
     Random.seed!(7)
-    mdl = EpiSewer.ww_idmodel()
+    mdl = EpiSewer.model()
     mdl_t = CT.as_turing_model(mdl, (y = y_obs, flow = flow), length(y_obs))
     res = mdl_t()
 

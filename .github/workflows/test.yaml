@@ -17,13 +17,12 @@ jobs:
     uses: EpiAware/.github/.github/workflows/tests.yml@155fc902a533f8dc33b9928322f5d46add789f75
     with:
       # The matrix this package tests on. Seeded, not managed: name your own
-      # value here and a resync keeps it (#73, #117). The lts leg runs
-      # Pkg.test, which develops the package under test, so the [sources] pin
-      # in test/Project.toml being a Pkg 1.11 feature costs it nothing; the
-      # jet/ad/docs/benchmark environments that do need the pin are separate
-      # jobs on the current release. A package pinning an unregistered
-      # dependency by git [sources] is seeded without lts instead (#410).
-      julia_versions: '["1", "lts", "pre"]'
+      # value here and a resync keeps it (#73, #117). lts (Julia 1.10) is
+      # dropped because the dependency chain (ComposableTuringIDModels,
+      # EpiAwareADTools 0.2) floors at Julia 1.11; the jet/ad/docs/benchmark
+      # environments that need the [sources] pin are separate jobs on the
+      # current release.
+      julia_versions: '["1", "pre"]'
     secrets: inherit  # pragma: allowlist secret
 
   downgrade-compat:
