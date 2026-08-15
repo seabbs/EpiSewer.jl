@@ -8,9 +8,7 @@
 # Common need: a DynamicPPL `@model` package. JET emits a false
 # `UndefVarErrorReport` for every `~`-assigned local (and `MethodErrorReport`s
 # through the `:=` tracker), because the tilde macro hides the assignment
-# from JET's static analysis. Uncomment to drop exactly those:
-#
-# const JET_REPORT_FILTER = dynamicppl_model_filter
-#
+# from JET's static analysis. Drop exactly those:
+const JET_REPORT_FILTER = dynamicppl_model_filter
 # Or write your own predicate. No `JET_REPORT_FILTER` keeps the strict
 # default (fail on any report).
