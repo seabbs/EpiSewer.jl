@@ -88,8 +88,17 @@ key_names = filter(p -> occursin(r"^Parameter\((std|σ|lpc|rw_init|Ascertainment
 key_names = map(p -> match(r"^Parameter\((.+)\)", p).captures[1], key_names)
 key_names = unique(key_names)
 if length(key_names) >= 2
-    syms = Symbol.(key_names)
-    post_df = DataFrame(name => vec(chn[sym]) for (name, sym) in zip(key_names, syms))
+    # Build the DataFrames column-by-column with plain String column names:
+    # `DataFrame(name => col for ...)` in generator form produces a malformed
+    # frame ("first"/"second" columns holding the name strings), which then
+    # reaches PairPlots' kernel-density bandwidth estimator as a
+    # Vector{SubString{String}} and errors.
+    cols = String.(key_names)
+    syms = Symbol.(cols)
+    post_df = DataFrame()
+    for (nm, sym) in zip(cols, syms)
+        post_df[!, nm] = vec(chn[sym])
+    end
 
     # Prior sample of the same parameters from the model.
     _parse_conc(v) = let s = string(v)
@@ -101,14 +110,19 @@ if length(key_names) >= 2
     mdl = as_turing_model(EpiSewer.model(flow = flow), y, length(y))
     prior_chn = sample(mdl, Prior(), 500; progress = false)
 
-    prior_df = DataFrame(name => vec(prior_chn[sym]) for (name, sym) in zip(key_names, syms))
+    prior_df = DataFrame()
+    for (nm, sym) in zip(cols, syms)
+        prior_df[!, nm] = vec(prior_chn[sym])
+    end
 
+    # Distinguish the two series by colour (a series-level `markersize` would
+    # be forwarded to the diagonal density Lines plots, which reject it).
     g = PairPlots.pairplot(
-        PairPlots.Series(prior_df; label = "Prior", markersize = 2),
-        PairPlots.Series(post_df; label = "Posterior", markersize = 3),
+        PairPlots.Series(prior_df; label = "Prior", color = :grey),
+        PairPlots.Series(post_df; label = "Posterior", color = :steelblue),
     )
     save(joinpath(outdir, "ww_pairplot_prior_posterior.png"), g)
-    @info "Saved pairplot" keys = key_names path = "docs/fits/ww_pairplot_prior_posterior.png"
+    @info "Saved pairplot" keys = cols path = "docs/fits/ww_pairplot_prior_posterior.png"
 else
     @warn "Not enough key scalar params for pairplot; found: $(key_names)"
 end
