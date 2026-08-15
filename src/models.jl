@@ -7,13 +7,13 @@
 #
 #   IDModel(
 #     Renewal(generation_time, rt = RandomWalk(), initialisation = Normal()),
-#     FlowNormalize(                    # observed concentrations (outermost)
+#     FlowNormalize(                    # load -> concentration (divide by flow)
 #       LatentDelay(                    # shedding delay: convolve load with PMF
 #         Ascertainment(                # load-per-case scaling
-#           NormalError(),              # observation noise
+#           LogNormalError(),           # relative (CV) observation noise
 #           Normal(log_lpc, σ_lpc)),
 #         shedding_pmf),
-#       flow))                          # flow normalization by daily flow
+#       flow))                          # flow: load (gc/day) / flow (mL/day)
 #
 # The observation model receives `(y_t, I_t)` from the IDModel composite — the
 # expected observations are the infection series — and each wrapper transforms
@@ -24,8 +24,8 @@
 # scores. This is the same chain EpiSewer's `sewer_job` builds (generation →
 # shedding → sewage → observation), using only ecosystem + package components.
 
-using ComposableTuringIDModels: Renewal, RandomWalk, NormalError, LatentDelay,
-    Ascertainment, IDModel, TransformObservationModel
+using ComposableTuringIDModels: Renewal, RandomWalk, LatentDelay,
+    Ascertainment, IDModel
 using Distributions: Normal
 
 const _FlowNormalize = Sewage.FlowNormalize
@@ -35,10 +35,11 @@ const _FlowNormalize = Sewage.FlowNormalize
         flow = data.flows.flow, lpc_prior = Normal(log(1e9), 0.5),
         infection_model = Renewal(generation_time = distributions.generation_dist,
             rt = RandomWalk(), initialisation = Normal()),
-        observation_model = FlowNormalize(
-            LatentDelay(Ascertainment(NormalError(), lpc_prior),
+        observation_model = Ascertainment(
+            LatentDelay(
+                FlowNormalize(LogNormalError()),
                 distributions.shedding_dist),
-            flow)) -> IDModel
+            lpc_prior)) -> IDModel
 
 Build the wastewater model as a composable `ComposableTuringIDModels.IDModel`
 (the EpiSewer README example). **Public but not exported** — call it as
@@ -53,9 +54,11 @@ README example assembly:
     initialisation = Normal())` — a renewal process driven by a
     random-walk `R_t`.
   - `observation_model`:
-    `FlowNormalize(LatentDelay(Ascertainment(NormalError(), lpc_prior),
+    `FlowNormalize(LatentDelay(Ascertainment(LogNormalError(), lpc_prior),
     shedding_pmf), flow)` — load-per-case scaling, shedding delay, flow
-    normalization, and a normal observation error.
+    normalization (load/flow -> concentration), and a log-normal observation
+    error (relative coefficient-of-variation noise). Raw concentrations
+    (gc/mL) are passed directly as `y_t`.
 
 Override either (or both) by passing your own `ComposableTuringIDModels`
 component; the body is a single `IDModel(infection_model, observation_model)`
@@ -101,19 +104,18 @@ function model(;
             rt = RandomWalk(), initialisation = Normal(),
         ),
         # Observation chain: infections -> load -> delayed load -> concentrations.
-        # The concentrations are scored on the LOG scale so the observation
-        # noise is relative (a coefficient of variation, as in EpiSewer's
-        # `noise_estimate`), rather than an absolute sigma that is negligible
-        # on the ~1e2-3e3 gc/mL observed scale.
-        observation_model = TransformObservationModel(
-            _FlowNormalize(
-                LatentDelay(
-                    Ascertainment(NormalError(), lpc_prior),
-                    distributions.shedding_dist,
-                ),
-                flow,
+        # Concentrations are scored with a LogNormal (relative, CV) noise model
+        # so raw concentrations (gc/mL) can be passed straight to the model —
+        # the flow-divided expected load is the LogNormal mean. This matches
+        # EpiSewer's `noise_estimate` (a coefficient of variation), and avoids
+        # an absolute sigma that would be negligible on the ~1e2-3e3 gc/mL
+        # observed scale.
+        observation_model = Ascertainment(
+            LatentDelay(
+                _FlowNormalize(Measurements.LogNormalError()),
+                distributions.shedding_dist,
             ),
-            x -> log.(x),
+            lpc_prior,
         ),
     )
     return IDModel(infection_model, observation_model)

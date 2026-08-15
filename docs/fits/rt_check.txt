@@ -1,0 +1,3 @@
+chain: (60, 2)
+latent params: ["Parameter(rw_init)", "Parameter(std)", "Parameter(ϵ_t)", "Parameter(init_incidence)", "Parameter(Ascertainment.intercept)", "Parameter(σ)", "Parameter(y_t[45])"]
+condition probe failed: MethodError: no method matching condition(::Model{typeof(ComposableTuringIDModels._as_turing_model_idmodel), (:model, :y_t, :n), (), (), Tuple{ComposableTuringIDModels.IDModel{ComposableTuringIDModels

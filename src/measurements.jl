@@ -12,9 +12,11 @@ using DynamicPPL
 using Distributions
 using ComposableTuringIDModels
 import ComposableTuringIDModels: as_turing_model
-import ComposableTuringIDModels: generate_observation_error_priors, observation_error
+import ComposableTuringIDModels: generate_observation_error_priors, observation_error,
+    as_turing_submodel
+using ComposableTuringIDModels: PriorLike
 
-export LOD, DigitalPCRError
+export LOD, DigitalPCRError, LogNormalError
 
 """
     LOD{E <: AbstractObservationErrorModel, T}
@@ -148,5 +150,56 @@ _transformed_dpcr(m::DigitalPCRError) = TransformObservationModel(
     inner ~ as_turing_submodel(_transformed_dpcr(m), y, Y_t)
     return (; y_t = inner.y_t, expected = inner.expected)
 end
+
+"""
+    LogNormalError{S <: PriorLike}
+
+A log-normal observation-error model with an inferred coefficient of variation.
+
+Positive measurements (e.g. wastewater concentrations, gc/mL) that are well
+described by *relative* noise — the noise scales with the signal — are scored
+with a LogNormal likelihood:
+
+```math
+y_t \\sim \\mathrm{LogNormal}\\left(\\log(Y_t) - \\frac{\\sigma^2}{2},\\, \\sigma\\right),
+```
+
+so `E[y_t] = Y_t` (the expected value equals the expected concentration) and
+`σ` is the log-scale CV of the measurement error. This matches EpiSewer's
+`noise_estimate` convention, where observation noise is a coefficient of
+variation rather than an absolute scale (an absolute `σ` on a ~1e2-3e3 gc/mL
+series would be negligible noise).
+
+The field `cv` sets the prior for `σ` — a `Distribution` (a constant, one
+scalar RV) or a process (a length-`n`, e.g. time-varying, CV). It is drawn
+through the single [`as_turing_submodel`](@ref) seam and read per time point
+via `_at`, exactly as `NormalError` treats its `std` prior.
+
+# Fields
+- `cv::S`: prior for the log-scale coefficient of variation `σ`.
+
+# Examples
+```julia
+using EpiSewer, Distributions
+lne = LogNormalError()
+mdl = as_turing_model(lne, missing, fill(100.0, 10))
+rand(mdl)
+```
+"""
+struct LogNormalError{S <: PriorLike} <: AbstractObservationErrorModel
+    "Prior for the log-scale coefficient of variation."
+    cv::S
+end
+
+LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
+
+@model function generate_observation_error_priors(
+        obs_model::LogNormalError, y_t, Y_t
+    )
+    σ ~ as_turing_submodel(obs_model.cv, length(Y_t); prefix = true)
+    return (; σ = σ)
+end
+
+observation_error(::LogNormalError, Y_t, σ) = LogNormal(log(Y_t) - σ^2 / 2, σ)
 
 end # module Measurements
