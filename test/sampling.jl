@@ -5,7 +5,7 @@ using TestItemRunner
     using EpiSewer
     import ComposableTuringIDModels
 
-    m = EpiSewer.Sampling.MeasurementOutliers(
+    m = EpiSewer.MeasurementOutliers(
         ComposableTuringIDModels.NormalError()
     )
     @test m.error_model isa ComposableTuringIDModels.NormalError
@@ -16,7 +16,7 @@ end
     using Distributions
     import ComposableTuringIDModels
 
-    m = EpiSewer.Sampling.MeasurementOutliers(
+    m = EpiSewer.MeasurementOutliers(
         ComposableTuringIDModels.NormalError()
     )
     @test m.contamination_prob isa Distributions.Beta
@@ -30,7 +30,7 @@ end
 
     CT = ComposableTuringIDModels
     mdl = CT.as_turing_model(
-        EpiSewer.Sampling.MeasurementOutliers(CT.NormalError()),
+        EpiSewer.MeasurementOutliers(CT.NormalError()),
         [100.0, missing, 500.0],
         fill(100.0, 3),
     )
@@ -43,7 +43,7 @@ end
     using Distributions
 
     # The mixture logpdf must be finite and at most 0 (a log-probability).
-    mix = EpiSewer.Sampling.OutlierMixture(
+    mix = EpiSewer.OutlierMixture(
         Normal(100.0, 2.0), Normal(100.0, 8.0), 0.1
     )
     lp = Distributions.logpdf(mix, 105.0)

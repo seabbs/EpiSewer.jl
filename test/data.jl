@@ -28,8 +28,8 @@ end
 end
 
 @testitem "example data and distributions are public but not exported" begin
-    @test isdefined(EpiSewer, :example_data)
-    @test isdefined(EpiSewer, :example_distributions)
-    @test !(:example_data in names(EpiSewer))
-    @test !(:example_distributions in names(EpiSewer))
+    @test Base.ispublic(EpiSewer, :example_data)
+    @test Base.ispublic(EpiSewer, :example_distributions)
+    @test !Base.isexported(EpiSewer, :example_data)
+    @test !Base.isexported(EpiSewer, :example_distributions)
 end

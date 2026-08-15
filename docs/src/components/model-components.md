@@ -28,7 +28,7 @@ missing.
 | sewage | `residence_dist_assume` | Convolve infection-shedding signal through a sewer residence-time distribution | `LatentDelay` (discrete convolution with a PMF) | covered (via `LatentDelay`) |
 | shedding | `incubation_dist_assume` | Disease-specific discretised incubation period | `LatentDelay` with a PMF from `CensoredDistributions` | covered |
 | shedding | `shedding_dist_assume` | Shedding load distribution (relative to symptom onset or infection) | `LatentDelay` with the shedding-load PMF; discretisation via `CensoredDistributions` | covered |
-| shedding | `load_per_case_calibrate` | Calibrate shed load per case against observed cases | `LoadPerCase` in `src/shedding.jl` (latent-stage transform, `expected_load = I_t .* load_per_case`), or `Ascertainment` (observation-stage scaling) | covered (implemented) |
+| shedding | `load_per_case_calibrate` | Calibrate shed load per case against observed cases | `Ascertainment` (observation-stage `I_t .* exp(lpc)` scaling, in the default chain) | covered (via `Ascertainment`) |
 | shedding | `load_variation_estimate` | Individual-level shedding-load overdispersion | Overdispersion via `NegativeBinomialError` (dispersion estimated) | covered (via `NegativeBinomialError`) |
 | infections | `generation_dist_assume` | Generation-time distribution between infections | `Renewal(generation_time = pmf, ...)`; PMF from `CensoredDistributions` | covered |
 | infections | `R_estimate_gp` / `R_estimate_rw` / `R_estimate_spline` | Flexible `R_t` smoothing | `HilbertSpaceGP` / `ExactGP` (GP), `RandomWalk` (RW), `AR` / spline-like trend for changepoint | covered |
@@ -47,8 +47,8 @@ composable counterparts. The wastewater-specific pieces (flow normalisation,
 limit-of-detection censoring, dPCR noise, outlier mixtures, load-per-case
 calibration) had no direct counterpart in the ecosystem and were implemented as
 small `ComposableTuringIDModels.jl`-compatible `Struct`s (`FlowNormalize`,
-`LOD`, `DigitalPCRError`, `MeasurementOutliers`, `LoadPerCase`) — see the
-status column above.
+`LOD`, `DigitalPCRError`, `MeasurementOutliers`) — see the status column
+above. Load-per-case calibration reuses `Ascertainment` from the ecosystem.
 
 ## Discretisation via CensoredDistributions
 
