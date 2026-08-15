@@ -91,49 +91,52 @@ end
 """
     as_turing_model(m::FlowNormalize, y_t, Y_t)
 
-Normalize the observed `y_t` and expected `Y_t` concentrations by
-`flow ./ reference_flow` and delegate scoring to the wrapped
-`error_model`'s generic observation-error loop.
+Convert an expected **load** series (`Y_t`, gc/day) into an expected
+**concentration** series by dividing by the daily flow, and delegate scoring
+to the wrapped `error_model`'s generic observation-error loop.
 
-The flow scale `flow ./ reference_flow` is a fixed, deterministic vector (not a
-latent/AD-active parameter), so this is a static reweighting of the two series
-before they reach the error model. Missing entries are preserved through the
-normalization and handled (sampled predictively) by the wrapped model.
+EpiSewer models the pathogen load at the sampling site (gc/day) and derives
+the observed concentration as `concentration_t = load_t / flow_t`. This
+component applies that division to the expected series (which the model chain
+provides as a load), so the scored expected values are on the observed
+concentration scale (gc/mL). The observed series `y_t` passes through
+unchanged. The flow is fixed, deterministic data (not a latent/AD-active
+parameter); missing entries are preserved and handled (sampled predictively)
+by the wrapped model.
 
 Returns whatever `as_turing_model(m.error_model, y_norm, Y_norm)` returns — the
-`(; y_t, expected)` tuple, with `y_t` the flow-normalized scored series and
-`expected` the flow-normalized expected series.
+`(; y_t, expected)` tuple, with `y_t` the observed series and `expected` the
+flow-converted expected concentration series.
 """
 @model function as_turing_model(m::FlowNormalize, y_t, Y_t)
-    scale = m.flow ./ m.reference_flow
+    # The expected series is a load (gc/day); divide by the daily flow to get
+    # an expected concentration (gc/mL) on the observed scale. When the
+    # expected series is shorter than the flow (e.g. a LatentDelay above has
+    # truncated it), align the trailing flow values to the delay tail.
+    n_exp = length(Y_t)
+    @assert length(m.flow) >= n_exp "flow must cover the expected series"
+    flow_scale = 1.0 ./ m.flow[(end - n_exp + 1):end]   # load -> concentration
 
-    # Normalize the observed series, preserving `missing` entries. A
-    # `MissingObservations` carrier is normalized per-entry on its plain
-    # values; a top-level `missing` (predictive simulation) stays `missing`.
+    # Observed series passes through unchanged (it is already a concentration).
     y = y_t isa NamedTuple ? y_t.y : y_t
     if y isa ComposableTuringIDModels.MissingObservations
-        y_norm = map(
-            (v, p, s) -> p ? (v * s) : missing,
-            y.value, y.present, scale,
-        )
+        y_norm = y
     elseif ismissing(y)
-        y_norm = Vector{Missing}(missing, length(Y_t))
+        y_norm = Vector{Missing}(missing, n_exp)
     else
-        @assert length(y) == length(scale) ||
-            length(y) >= length(Y_t) "flow must be aligned with observations"
-        y_norm = y .* scale
+        @assert length(y) >= n_exp "observation series must be at least as long as the expected series"
+        y_norm = y
     end
 
-    # Normalize the expected series.
-    Y_norm = Y_t .* scale
+    # Divide the expected (load) series by flow to reach the concentration scale.
+    Y_norm = Y_t .* flow_scale
 
-    # Delegate scoring to the wrapped observation model's generic loop, sampling
-    # it as a submodel (the same seam `LatentDelay`/`Ascertainment` use) so the
+    # Delegate scoring to the wrapped error model's generic loop, sampling it as
+    # a submodel (the same seam `LatentDelay`/`Ascertainment` use) so the
     # returned `(; y_t, expected)` tuple carries the scored series rather than an
-    # unevaluated model — required when this wrapper is itself composed inside a
-    # larger model (e.g. an `IDModel`).
+    # unevaluated model — required when this wrapper is composed inside a larger
+    # model (e.g. an `IDModel` or `TransformObservationModel`).
     inner ~ as_turing_submodel(m.error_model, y_norm, Y_norm)
     return (; y_t = inner.y_t, expected = inner.expected)
 end
-
 end # module Sewage

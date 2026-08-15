@@ -30,13 +30,18 @@ for unobserved days.
 """
 function example_data()
     measurements = CSV.read(
-        joinpath(_EXAMPLE_DATA_DIR, "measurements.csv"), DataFrame
+        joinpath(_EXAMPLE_DATA_DIR, "measurements.csv"), DataFrame;
+        missingstring = "NA",
+        types = Dict("date" => String, "concentration" => Union{Missing, Float64}),
     )
     flows = CSV.read(
-        joinpath(_EXAMPLE_DATA_DIR, "flows.csv"), DataFrame
+        joinpath(_EXAMPLE_DATA_DIR, "flows.csv"), DataFrame;
+        types = Dict("date" => String, "flow" => Float64),
     )
     cases = CSV.read(
-        joinpath(_EXAMPLE_DATA_DIR, "cases.csv"), DataFrame
+        joinpath(_EXAMPLE_DATA_DIR, "cases.csv"), DataFrame;
+        missingstring = "NA",
+        types = Dict("date" => String, "cases" => Union{Missing, Float64}),
     )
     return (
         measurements = measurements,

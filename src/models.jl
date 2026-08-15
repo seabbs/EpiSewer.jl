@@ -25,7 +25,7 @@
 # shedding → sewage → observation), using only ecosystem + package components.
 
 using ComposableTuringIDModels: Renewal, RandomWalk, NormalError, LatentDelay,
-    Ascertainment, IDModel
+    Ascertainment, IDModel, TransformObservationModel
 using Distributions: Normal
 
 const _FlowNormalize = Sewage.FlowNormalize
@@ -70,8 +70,10 @@ call. The data/prior arguments (`data`, `distributions`, `flow`,
   [`example_distributions`](@ref).
 - `flow`: the daily flow series (mL/day), one value per time point. Defaults
   to the flows from `data`.
-- `lpc_prior`: the log-scale prior on the load shed per case (scaled onto
-  expected infections by `Ascertainment`'s default `xexpy` transform).
+- `lpc_prior`: the log-scale prior on the load shed per case (gc/case),
+  scaled onto expected infections by `Ascertainment`'s default `xexpy`
+  transform. Defaults to the scale implied by the Zurich example data
+  (`Normal(log(2e11), 0.5)`).
 - `infection_model`: the `AbstractInfectionModel` composable to use as the
   infection process (defaults to the `Renewal` above).
 - `observation_model`: the `AbstractObservationModel` composable to use as the
@@ -92,18 +94,26 @@ function model(;
         data = example_data(),
         distributions = example_distributions(),
         flow = Vector{Float64}(data.flows.flow),
-        lpc_prior = Normal(log(1.0e9), 0.5),
+        lpc_prior = Normal(log(2.0e11), 0.5),
         infection_model = Renewal(
             ;
             generation_time = distributions.generation_dist,
             rt = RandomWalk(), initialisation = Normal(),
         ),
-        observation_model = _FlowNormalize(
-            LatentDelay(
-                Ascertainment(NormalError(), lpc_prior),
-                distributions.shedding_dist,
+        # Observation chain: infections -> load -> delayed load -> concentrations.
+        # The concentrations are scored on the LOG scale so the observation
+        # noise is relative (a coefficient of variation, as in EpiSewer's
+        # `noise_estimate`), rather than an absolute sigma that is negligible
+        # on the ~1e2-3e3 gc/mL observed scale.
+        observation_model = TransformObservationModel(
+            _FlowNormalize(
+                LatentDelay(
+                    Ascertainment(NormalError(), lpc_prior),
+                    distributions.shedding_dist,
+                ),
+                flow,
             ),
-            flow,
+            x -> log.(x),
         ),
     )
     return IDModel(infection_model, observation_model)
