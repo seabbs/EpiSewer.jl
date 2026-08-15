@@ -88,24 +88,29 @@ end
 """
     DigitalPCRError{T <: AbstractVector{<:Integer}}
 
-A dPCR-specific observation-noise model.
+A dPCR-specific observation-noise model (`noise_estimate_dPCR` in EpiSewer).
 
 In digital PCR, the sample is partitioned into small reaction chambers
 (partitions). The measured positive partition count follows a binomial
-distribution: `positive_partitions_t ~ Binomial(total_partitions_t, p_t)`
-where `p_t = 1 - exp(-λ_t)` and `λ_t` is the expected copies per partition
-derived from the concentration.
+distribution:
 
-The expected series `Y_t` passed into the model should be the **log expected
-copies per partition**: `λ_t = exp(Y_t)` — i.e. `Y_t` is on a real line while
-the implied positive-copy rate `exp(Y_t)` stays positive. If the upstream
-expected series is on the concentration scale (gc/mL), convert it to expected
-copies per partition by incorporating the dilution factor and partition volume
-before passing `Y_t`.
+```math
+\\mathrm{positive\\,partitions}_t \\sim \\mathrm{Binomial}(\\mathrm{total\\,partitions}_t, p_t),
+\\qquad p_t = 1 - \\exp(-\\exp(Y_t)),
+```
 
-This component replicates EpiSewer's `noise_estimate_dPCR` likelihood: the
-dPCR assay reads out the number of positive partitions, which is binomial
-about the expected positives given the copies-per-partition rate.
+where `Y_t` is the **log expected copies per partition** supplied by the model.
+This is the standard dPCR likelihood: the expected copies per partition
+``\\lambda_t = \\exp(Y_t)`` maps to the per-partition positivity probability
+``p_t = 1 - \\exp(-\\lambda_t)`` via the Poisson partition law.
+
+The component is expressed entirely through ecosystem pieces:
+[`TransformObservationModel`](@ref ComposableTuringIDModels.TransformObservationModel)
+applies the inverse-complementary-log-log link `x -> 1 .- exp.(-exp.(x))` to the
+expected series, and [`BinomialError`](@ref ComposableTuringIDModels.BinomialError)
+scores the observed positive-partition counts against the per-time-point trial
+totals. The data contract follows `BinomialError`: `y_t` is a `NamedTuple`
+`(y = positive_partitions, N = total_partitions)`.
 
 # Fields
 - `total_partitions::T`: the valid partition count per measurement (one per
@@ -114,26 +119,34 @@ about the expected positives given the copies-per-partition rate.
 # Examples
 ```julia
 dpcr = DigitalPCRError([1000, 1000, 1000])
-y = [10, 25, missing]          # observed positive partition counts
+y = (y = [10, 25, missing], N = dpcr.total_partitions)  # observed positives + totals
 Y = log.([0.01, 0.02, 0.03])  # log expected copies per partition
 mdl = as_turing_model(dpcr, y, Y)
 rand(mdl)
 ```
 """
-struct DigitalPCRError{T <: AbstractVector{<:Integer}} <: AbstractObservationErrorModel
+struct DigitalPCRError{T <: AbstractVector{<:Integer}} <: AbstractObservationModel
     total_partitions::T
 end
 
-@model function generate_observation_error_priors(
-        obs_model::DigitalPCRError, y_t, Y_t
-    )
-    return (; total_partitions = obs_model.total_partitions)
-end
+# The dPCR noise model as a transform-observation + binomial-error composition:
+#   Y_t (log copies/partition) --cloglog-inverse--> p_t --Binomial(N_t)--> positives.
+# `as_turing_model(m::DigitalPCRError, y_t, Y_t)` builds this composition and
+# samples the inner model with the data's trial counts.
+_transformed_dpcr(m::DigitalPCRError) = TransformObservationModel(
+    BinomialError(),
+    x -> 1.0 .- exp.(-exp.(x)),
+)
 
-function observation_error(m::DigitalPCRError, Y_t, total_partitions_t)
-    p_t = 1.0 - exp(-exp(Y_t))
-    # Clamp p_t to (0,1) so tiny expected-lambda values do not error.
-    return Binomial(total_partitions_t, clamp(p_t, eps(), 1 - eps()))
+@model function as_turing_model(m::DigitalPCRError, y_t, Y_t)
+    # Merge the data NamedTuple: the user supplies (y = positives, N = total_partitions)
+    # inside `y_t`. If N is already present, use it; otherwise add the struct's
+    # total_partitions as the trial count.
+    y = y_t isa NamedTuple ? merge(y_t, (N = m.total_partitions,)) : (y = y_t, N = m.total_partitions)
+    # The inner model (TransformObservationModel + BinomialError) scores the
+    # transformed expected observations via the binomial likelihood.
+    inner ~ as_turing_submodel(_transformed_dpcr(m), y, Y_t)
+    return (; y_t = inner.y_t, expected = inner.expected)
 end
 
 end # module Measurements

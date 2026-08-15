@@ -53,6 +53,7 @@ differentiable parameter(s):
   [`EpiSewer.Sampling.MeasurementOutliers`](@ref) scores per time point,
   differentiated w.r.t. the contamination probability `p`.
 - `load_per_case_loglik` — the load-per-case log-density
+- `digital_pcr_loglik` — the dPCR partition-count log-density (Binomial over cloglog-inverse-transformed expected copies)
   `logpdf(Normal(infections·lpc, σ), load)` that the expected load produced by
   [`EpiSewer.Shedding.LoadPerCase`](@ref) is scored against, differentiated
   w.r.t. the inferred per-case load `lpc`.
@@ -137,6 +138,26 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
         DIT.Scenario{:gradient, :out}(
             lpc_loglik, θ_lpc; name = "load_per_case_loglik",
             res1 = with_reference ? _reference(lpc_loglik, θ_lpc, ()) : nothing
+        )
+    )
+
+    # --- DigitalPCR (dPCR partition-count) log-likelihood ---
+    # Observed positive partition counts scored against Binomial(total, p)
+    # with p = 1 - exp(-exp(Y_t)) (cloglog-inverse transform of the
+    # log-copies-per-partition expectation). θ = [log_copies] per time point.
+    total_parts = [1000, 1000, 1000]
+    positives = [10, 25, 40]
+    function dpcr_loglik(θ)
+        Y_logcopies = θ  # per-time-point log expected copies per partition
+        p_t = 1.0 .- exp.(-exp.(Y_logcopies))
+        return sum(logpdf.(Binomial.(total_parts, clamp.(p_t, 1.0e-6, 1 - 1.0e-6)), positives))
+    end
+    θ_dpcr = log.([0.01, 0.025, 0.04])
+    push!(
+        out,
+        DIT.Scenario{:gradient, :out}(
+            dpcr_loglik, θ_dpcr; name = "digital_pcr_loglik",
+            res1 = with_reference ? _reference(dpcr_loglik, θ_dpcr, ()) : nothing
         )
     )
 

@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   test:
-    uses: seabbs/.github/.github/workflows/tests.yml@155fc902a533f8dc33b9928322f5d46add789f75
+    uses: EpiAware/.github/.github/workflows/tests.yml@155fc902a533f8dc33b9928322f5d46add789f75
     with:
       # The matrix this package tests on. Seeded, not managed: name your own
       # value here and a resync keeps it (#73, #117). The lts leg runs
@@ -27,7 +27,7 @@ jobs:
     secrets: inherit  # pragma: allowlist secret
 
   downgrade-compat:
-    uses: seabbs/.github/.github/workflows/downgrade.yml@6b91a6c050b9c8483f522e2b246a5f6ef517cda0
+    uses: EpiAware/.github/.github/workflows/downgrade.yml@6b91a6c050b9c8483f522e2b246a5f6ef517cda0
     with:
       julia_version: '1'
     secrets: inherit  # pragma: allowlist secret

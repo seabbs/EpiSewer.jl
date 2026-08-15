@@ -78,3 +78,34 @@ end
     )
     @test isfinite(ForwardDiff.derivative(f, 100.0))
 end
+
+@testitem "DigitalPCRError scores dPCR partition counts via transform composition" begin
+    using EpiSewer
+    using Turing, Distributions
+    import ComposableTuringIDModels as CT
+
+    m = EpiSewer.Measurements.DigitalPCRError([1000, 1000, 1000])
+    @test m.total_partitions == [1000, 1000, 1000]
+
+    # Data contract: NamedTuple (y = positive partitions, N = total partitions).
+    y = (y = [10, 25, missing], N = m.total_partitions)
+    Y = log.([0.01, 0.02, 0.03])
+    mdl = CT.as_turing_model(m, y, Y)
+    chn = sample(mdl, Prior(), 2; progress = false)
+    @test size(chn, 1) == 2
+end
+
+@testitem "DigitalPCRError binomial link is the Poisson partition law" begin
+    using EpiSewer
+    using Distributions: Binomial, clamp
+    import ComposableTuringIDModels: as_turing_model, TransformObservationModel, BinomialError
+
+    # The transform composition must yield Binomial(N, 1 - exp(-exp(Y))).
+    m = EpiSewer.Measurements.DigitalPCRError([1000])
+    tr = EpiSewer.Measurements._transformed_dpcr(m)
+    @test tr isa TransformObservationModel
+    @test tr.model isa BinomialError
+    Y = log(0.02)  # log copies per partition
+    p = 1.0 - exp(-exp(Y))
+    @test p ≈ 0.0198013 atol = 1.0e-5
+end
