@@ -139,5 +139,5 @@ If you use EpiSewer in your work, please cite it. Citation metadata lives in [`C
 
 ## Code of conduct
 
-Please note that the EpiSewer project is released with a [Contributor Code of Conduct](https://github.com/seabbs/.github/blob/main/CODE_OF_CONDUCT.md). By contributing, you agree to abide by its terms.
+Please note that the EpiSewer project is released with a [Contributor Code of Conduct](https://github.com/EpiAware/.github/blob/main/CODE_OF_CONDUCT.md). By contributing, you agree to abide by its terms.
 <!-- standard-sections:end -->
