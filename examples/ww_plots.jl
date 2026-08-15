@@ -5,6 +5,12 @@
 # the key scalar parameters) from the fitted chains saved by
 # `ww_fit_example.jl`, using the docs environment (Makie + PairPlots).
 #
+# TODO(follow-up): reproduce the remaining original README plots
+#   (concentration fit, expected load, infections ± cases, growth report).
+#   These need predictive (`predict`) or expected-series reconstruction from
+#   the chain — more machinery than the R_t / pairplot panels here; see the
+#   plot list in `.resources/EpiSewer/README.Rmd`.
+#
 # Requires: julia --project=docs --threads=2 examples/ww_plots.jl
 # =============================================================================
 
@@ -42,19 +48,30 @@ end
 
 chn = get_chain()
 
+# --- Chain-key guard -----------------------------------------------------------
+# The chain keys follow the FlexiChains "Parameter(...)" format and the model
+# internals (`rw_init`, `ϵ_t`) come from ComposableTuringIDModels' RandomWalk.
+# Guard on those so a rename degrades to a clear warning rather than a crash.
+function _missing_keys(required, pnames)
+    miss = [k for k in required if !any(p -> p == k, pnames)]
+    if !isempty(miss)
+        @warn "Expected chain parameter(s) not found — plot section skipped." missing = miss actual = pnames
+    end
+    return isempty(miss) ? nothing : miss
+end
+
 # --- R_t over time ------------------------------------------------------------
 # R_t is the exp of the renewal latent Z_t. The RandomWalk latent is
 #   Z_t = rw_init + cumsum(ϵ_t)
 # with rw_init and ϵ_t stored as chain parameters, so R_t is reconstructed
 # directly from the fitted chain (no predict needed).
-pnames = [string(k) for k in keys(chn)]
-rw_init = chn[:rw_init]                          # (draws, chains) scalars
-eps = chn[Symbol("ϵ_t")]                          # (draws, chains) vectors of length n-1
-n_draw, n_chain = size(eps)
-n = length(first(eps)) + 1                       # n-1 innovations -> n time points
-function _reconstruct_R(rw_init, eps)
+function _reconstruct_from_chain(chn)
+    pnames = [string(k) for k in keys(chn)]
+    _missing_keys(["Parameter(rw_init)", "Parameter(ϵ_t)"], pnames) !== nothing && return nothing
+    rw_init = chn[:rw_init]                      # (draws, chains) scalars
+    eps = chn[Symbol("ϵ_t")]                     # (draws, chains) vectors of length n-1
     n_draw, n_chain = size(eps)
-    n = length(first(eps)) + 1
+    n = length(first(eps)) + 1                   # n-1 innovations -> n time points
     R_draws = zeros(n_draw * n_chain, n)
     idx = 0
     for d in 1:n_draw, c in 1:n_chain
@@ -64,26 +81,31 @@ function _reconstruct_R(rw_init, eps)
     end
     return R_draws
 end
-R_draws = _reconstruct_R(rw_init, eps)
-med = vec(median(R_draws; dims = 1))
-lo95 = [quantile(R_draws[:, i], 0.025) for i in axes(R_draws, 2)]
-hi95 = [quantile(R_draws[:, i], 0.975) for i in axes(R_draws, 2)]
-t = 1:length(med)
 
-fig = Figure(size = (900, 420))
-ax = Axis(
-    fig[1, 1]; title = "Effective reproduction number R_t",
-    xlabel = "day", ylabel = "R_t"
-)
-band!(ax, t, lo95, hi95; color = (:steelblue, 0.3), label = "95% CI")
-lines!(ax, t, med; color = :steelblue, label = "median")
-hlines!(ax, [1.0]; color = :red, linestyle = :dash, label = "R = 1")
-axislegend(ax; position = :lt)
-save(joinpath(outdir, "ww_plot_Rt.png"), fig)
-@info "Saved R_t plot" path = "docs/fits/ww_plot_Rt.png"
+R_draws = _reconstruct_from_chain(chn)
+if !isnothing(R_draws)
+    med = vec(median(R_draws; dims = 1))
+    lo95 = [quantile(R_draws[:, i], 0.025) for i in axes(R_draws, 2)]
+    hi95 = [quantile(R_draws[:, i], 0.975) for i in axes(R_draws, 2)]
+    t = 1:length(med)
+
+    fig = Figure(size = (900, 420))
+    ax = Axis(
+        fig[1, 1]; title = "Effective reproduction number R_t",
+        xlabel = "day", ylabel = "R_t"
+    )
+    band!(ax, t, lo95, hi95; color = (:steelblue, 0.3), label = "95% CI")
+    lines!(ax, t, med; color = :steelblue, label = "median")
+    hlines!(ax, [1.0]; color = :red, linestyle = :dash, label = "R = 1")
+    axislegend(ax; position = :lt)
+    save(joinpath(outdir, "ww_plot_Rt.png"), fig)
+    @info "Saved R_t plot" path = "docs/fits/ww_plot_Rt.png"
+end
 
 # --- Prior vs posterior PairPlots for key scalar parameters -------------------
 # Key scalar params: the load-per-case, observation noise, RW step std.
+pnames = [string(k) for k in keys(chn)]
+_missing_keys(["Parameter(std)", "Parameter(σ)", "Parameter(rw_init)"], pnames)
 key_names = filter(p -> occursin(r"^Parameter\((std|σ|lpc|rw_init|Ascertainment)", p), pnames)
 key_names = map(p -> match(r"^Parameter\((.+)\)", p).captures[1], key_names)
 key_names = unique(key_names)

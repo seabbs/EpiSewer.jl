@@ -81,8 +81,10 @@ call. The data/prior arguments (`data`, `distributions`, `flow`,
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
 d = example_data()
-y = [100.0, missing, 130.0]  # observed concentrations
-mdl = as_turing_model(EpiSewer.model(flow = d.flows.flow[1:3]), y, 3)
+# The series must be longer than the shedding-load PMF (~38 days, the
+# LatentDelay lower bound) for the default observation chain.
+y = fill(missing, 60)  # 60 days of (missing) concentrations
+mdl = as_turing_model(EpiSewer.model(flow = Vector{Float64}(d.flows.flow[1:60])), y, 60)
 chn = sample(mdl, Prior(), 2)
 ```
 """

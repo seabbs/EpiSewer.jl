@@ -18,6 +18,8 @@
 using EpiSewer
 using ComposableTuringIDModels: as_turing_model
 using Turing
+using MCMCChains
+using DataFrames
 using Random, Serialization
 
 Random.seed!(42)
@@ -54,6 +56,29 @@ chn = sample(
 # --- Diagnostics --------------------------------------------------------------
 @info "Sampling complete" size(chn) = size(chn)
 @info "Parameter count" n_parameters = length(keys(chn))
+
+function _fit_diagnostics(chn)
+    # R-hat (split Gelman-Rubin) from MCMCChains' flexi digest.
+    gd = MCMCChains.gelmandiag(chn)
+    gd_df = DataFrame(gd)
+    max_rhat = maximum(psrf -> ismissing(psrf) ? 0.0 : psrf, gd_df.psrf)
+
+    # Effective sample size per parameter.
+    ess = MCMCChains.ess(chn)
+    ess_df = DataFrame(ess)
+    min_ess = minimum(st -> ismissing(st) ? 0.0 : st, ess_df.stat)
+
+    return (; max_rhat = max_rhat, min_ess = min_ess)
+end
+
+try
+    diag = _fit_diagnostics(chn)
+    @info "Convergence diagnostics" \
+        max_rhat = round(diag.max_rhat; digits = 3) \
+        min_ess = round(diag.min_ess; digits = 1)
+catch err
+    @warn "Could not compute convergence diagnostics" exception = err
+end
 
 # --- Save ---------------------------------------------------------------------
 outdir = joinpath("docs", "fits")

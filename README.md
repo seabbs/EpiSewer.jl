@@ -85,10 +85,17 @@ and observation noise — and can be evaluated on the example data directly:
 
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
+using DataFrames: DataFrame
 
+# The example concentration column carries "NA" for unobserved days; parse it
+# to a Union{Missing,Float64} series. The series must be longer than the
+# shedding-load PMF (~38 days, the LatentDelay lower bound).
 d = EpiSewer.example_data()
+_parse_conc(v) = let s = string(v)
+    (s == "NA" || s == "missing") ? missing : parse(Float64, s)
+end
+y = Vector{Union{Missing, Float64}}(_parse_conc.(d.measurements.concentration))
 flow = Vector{Float64}(d.flows.flow)
-y = [missing, 450.0, 740.0, missing]  # observed concentrations (gc/mL)
 mdl = EpiSewer.model(flow = flow)     # returns an IDModel
 mdl_t = as_turing_model(mdl, y, length(y))
 chn = sample(mdl_t, Prior(), 2)
@@ -97,6 +104,25 @@ chn = sample(mdl_t, Prior(), 2)
 `EpiSewer.model` is **public but not exported** (call it as
 `EpiSewer.model(...)`, never `model(...)`), and its arguments are the
 composable component structs and the data needed to build them.
+
+### Worked example: fit and plots
+
+The full worked example (NUTS fit with 2 chains on 2 threads, then the
+README plots) lives in [`examples/`](examples/):
+
+```sh
+julia --project=. --threads=2 examples/ww_fit_example.jl   # NUTS fit + diagnostics
+julia --project=docs --threads=2 examples/ww_plots.jl      # R_t + prior-vs-posterior plots
+```
+
+The fitted effective reproduction number `R_t` (reconstructed from the
+renewal latent):
+
+<img src="./docs/fits/ww_plot_Rt.png" width="100%" alt="R_t estimate" />
+
+Prior (grey) vs posterior (blue) densities for the key scalar parameters:
+
+<img src="./docs/fits/ww_pairplot_prior_posterior.png" width="100%" alt="Prior vs posterior" />
 
 <!-- standard-sections:start -->
 <!-- MANAGED by EpiAwarePackageTools.scaffold — do not edit between the
