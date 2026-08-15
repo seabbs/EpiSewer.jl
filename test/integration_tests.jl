@@ -1,21 +1,24 @@
 using EpiSewer
 using TestItemRunner
 
-# Integration tests: compose the new EpiSewer components with core
-# ComposableTuringIDModels components into a working model and verify the
-# pipeline runs end-to-end via lightweight prior (predictive) sampling.
+# Integration tests: build the EpiSewer README model as a composable
+# `IDModel` (ComposableTuringIDModels) and verify the pipeline runs
+# end-to-end via lightweight prior (predictive) sampling.
 #
-# The chain composed here mirrors the EpiSewer README example:
+# The model mirrors the EpiSewer README example:
 #   Renewal (generation time, R_t ~ RandomWalk)   -> infections I_t   (core)
-#   LoadPerCase (per-case shed load)              -> expected load    (ours)
+#   Ascertainment (per-case shed load)            -> expected load    (ecosystem)
+#   LatentDelay (shedding-load PMF)               -> delayed load     (ecosystem)
 #   FlowNormalize(NormalError, flow)              -> observed concerts (ours, wraps core)
-# Seeding / shedding-delay / LOD are exercised by the components they compose
-# alongside; this test keeps the chain minimal but genuinely multi-component.
+#
+# `ww_idmodel(...)` assembles this chain as `IDModel(infection_model,
+# observation_model)`; the observation model receives `(y_t, I_t)` from the
+# composite and each wrapper transforms the expected series inward.
 
-@testitem "Composable model composes Renewal + LoadPerCase + FlowNormalize on example data" begin
+@testitem "ww_idmodel builds a composable IDModel that samples on example data" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
-    using Distributions, Turing, DynamicPPL, Random
+    using Distributions, Turing, Random
 
     # Parse the example concentration strings ("NA" -> missing) to Float64.
     _parse_conc(v) = let s = string(v)
@@ -23,48 +26,40 @@ using TestItemRunner
     end
 
     d = EpiSewer.example_data()
-    dst = EpiSewer.example_distributions()
-    gen = dst.generation_dist
-    shed = dst.shedding_dist
     conc = _parse_conc.(d.measurements.concentration)
 
-    # Subsample for a lightweight test.
-    sub = 5:60
+    # Subsample for a lightweight test (LatentDelay truncates the expected
+    # series by the shedding PMF length, so n must exceed it).
+    sub = 5:64
+    n = length(sub)
     y_obs = Vector{Union{Missing, Float64}}(conc[sub])
     flow = Vector{Float64}(d.flows.flow[sub])
-    n = length(y_obs)
 
     Random.seed!(42)
-    NE = CT.NormalError(; std = CT.HalfNormal(0.1))
-    fn_obs = EpiSewer.Sewage.FlowNormalize(NE; flow = flow)
+    mdl = EpiSewer.ww_idmodel(flow = flow)
 
-    @model function ww_model(y_t, flow, gen, shed, n, fn_obs)
-        # Core infection process: renewal with a random-walk R_t.
-        infections ~ CT.as_turing_submodel(
-            CT.Renewal(
-                ; generation_time = gen,
-                rt = CT.RandomWalk(), initialisation = Normal()
-            ),
-            n
-        )
-        I_t = infections.I_t
+    # It is an IDModel composing a Renewal with the flow-normalized chain.
+    @test mdl isa CT.IDModel
+    @test mdl.infection_model isa CT.Renewal
 
-        # Our component: per-case shed load -> expected load.
-        load ~ CT.as_turing_submodel(EpiSewer.Shedding.LoadPerCase(), I_t)
-        expected_load = load.expected_load
-
-        # Our component (wrapping core NormalError): flow-normalized observations.
-        obs ~ CT.as_turing_submodel(fn_obs, y_t, expected_load)
-
-        return (; I_t, expected_load, R_t = infections.Z_t)
-    end
-
-    mdl = ww_model(y_obs, flow, gen, shed, n, fn_obs)
-    chn = sample(mdl, Prior(), 2; progress = false)
+    mdl_t = CT.as_turing_model(mdl, y_obs, n)
+    chn = sample(mdl_t, Prior(), 2; progress = false)
 
     @test size(chn, 1) == 2
     @test n == length(y_obs)
-    @test length(gen) > 0 && length(shed) > 0
+    @test n > length(EpiSewer.example_distributions().shedding_dist)
+end
+
+@testitem "ww_idmodel defaults build on the full example data" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+
+    d = EpiSewer.example_data()
+    mdl = EpiSewer.ww_idmodel()  # default flow from the full series
+
+    @test mdl isa CT.IDModel
+    # Default flow: full-length flows from the example data.
+    @test length(mdl.observation_model.flow) == length(d.flows.flow)
 end
 
 @testitem "Composable model also exercises the FlowNormalize error model in isolation" begin
@@ -78,4 +73,28 @@ end
     # A fully-observed series normalizes and constructs a model.
     mdl = CT.as_turing_model(fn, fill(100.0, 10), fill(100.0, 10))
     @test mdl !== nothing
+end
+
+@testitem "Composable model also exercises full ww_idmodel via direct evaluation" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+    using Distributions, Random
+
+    d = EpiSewer.example_data()
+    conc = [
+        string(v) == "NA" ? missing : parse(Float64, string(v))
+            for v in d.measurements.concentration[5:64]
+    ]
+    y_obs = Vector{Union{Missing, Float64}}(conc)
+    flow = Vector{Float64}(d.flows.flow[5:64])
+
+    Random.seed!(7)
+    mdl = EpiSewer.ww_idmodel(flow = flow)
+    mdl_t = CT.as_turing_model(mdl, y_obs, length(y_obs))
+    res = mdl_t()
+
+    @test haskey(res, :generated_y_t)
+    @test haskey(res, :expected_y_t)
+    @test haskey(res, :I_t)
+    @test haskey(res, :Z_t)
 end

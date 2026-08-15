@@ -14,7 +14,7 @@ using CSV
 using DataFrames
 
 export example_data, example_distributions,
-    get_discrete_gamma, get_discrete_gamma_shifted
+    get_discrete_gamma, get_discrete_gamma_shifted, ww_idmodel
 
 # Discretised distribution helpers (get_discrete_gamma, get_discrete_gamma_shifted)
 include("distributions.jl")
@@ -28,5 +28,8 @@ include("measurements.jl")
 include("sampling.jl")
 include("sewage.jl")
 include("shedding.jl")
+
+# Default wastewater model assembly (the README example as a composable IDModel)
+include("models.jl")
 
 end # module EpiSewer

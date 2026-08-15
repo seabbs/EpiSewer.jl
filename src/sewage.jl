@@ -11,7 +11,7 @@ using Turing
 using DynamicPPL
 using Distributions
 using ComposableTuringIDModels
-import ComposableTuringIDModels: as_turing_model
+import ComposableTuringIDModels: as_turing_model, as_turing_submodel
 using ComposableTuringIDModels: AbstractObservationModel, AbstractObservationErrorModel,
     generate_observation_error_priors, observation_error, _at
 
@@ -44,8 +44,11 @@ and expected series and delegate scoring to the wrapped error model exactly as
 if we had observed the normalized series directly.
 
 # Fields
-- `error_model`: the underlying observation-error model (e.g. `NormalError()`),
-  operating on the flow-normalized concentrations.
+- `error_model`: the underlying observation model (e.g. `NormalError()`),
+  operating on the flow-normalized concentrations. Any
+  `AbstractObservationModel` composes here, so the full observation chain
+  (e.g. `LatentDelay(Ascertainment(NormalError(), prior), pmf)`) can be
+  wrapped by the flow normalization.
 - `flow`: the daily flow series (mL/day), one value per time point, used to
   normalize the concentrations.
 - `reference_flow`: the flow value to normalize to (default the median of
@@ -59,7 +62,7 @@ model = as_turing_model(mn, [100.0, missing], [100.0, 100.0])
 ```
 """
 struct FlowNormalize{
-        E <: AbstractObservationErrorModel, F <: AbstractVector,
+        E <: AbstractObservationModel, F <: AbstractVector,
         R <: Real,
     } <: AbstractObservationModel
     error_model::E
@@ -68,7 +71,7 @@ struct FlowNormalize{
 end
 
 function FlowNormalize(
-        error_model::AbstractObservationErrorModel,
+        error_model::AbstractObservationModel,
         flow::AbstractVector{<:Real};
         reference_flow::Real = median(flow),
     )
@@ -78,7 +81,7 @@ end
 # Convenience constructor: a normal-error flow-normalization with a prior on
 # the observation-noise standard deviation, matching the EpiSewer default.
 function FlowNormalize(
-        error_model::AbstractObservationErrorModel;
+        error_model::AbstractObservationModel;
         flow::AbstractVector{<:Real}, reference_flow::Union{Real, Nothing} = nothing
     )
     ref = reference_flow === nothing ? median(flow) : reference_flow
@@ -124,8 +127,13 @@ Returns whatever `as_turing_model(m.error_model, y_norm, Y_norm)` returns — th
     # Normalize the expected series.
     Y_norm = Y_t .* scale
 
-    # Delegate scoring to the wrapped error model's generic loop.
-    return as_turing_model(m.error_model, y_norm, Y_norm)
+    # Delegate scoring to the wrapped observation model's generic loop, sampling
+    # it as a submodel (the same seam `LatentDelay`/`Ascertainment` use) so the
+    # returned `(; y_t, expected)` tuple carries the scored series rather than an
+    # unevaluated model — required when this wrapper is itself composed inside a
+    # larger model (e.g. an `IDModel`).
+    inner ~ as_turing_submodel(m.error_model, y_norm, Y_norm)
+    return (; y_t = inner.y_t, expected = inner.expected)
 end
 
 end # module Sewage
