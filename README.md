@@ -44,6 +44,14 @@ The latent infections are mapped to an expected load by convolving the infection
 
 Combining the latent model and the observation model gives a full Bayesian generative model. Inference is performed with Hamiltonian MCMC sampling, which produces a full posterior distribution over every parameter. From that posterior we obtain R_t and the other transmission indicators — along with infections, expected load and concentration — together with credible intervals that quantify the uncertainty in every estimate.
 
+> ✅ **A working composable model has been built.** The integration test at
+> `test/integration_tests.jl` composes the EpiSewer components with core
+> `ComposableTuringIDModels` pieces — `Renewal` (with a random-walk `R_t`),
+> `LoadPerCase` (per-case shed load), and `FlowNormalize` (flow-normalized
+> observations over a `NormalError`) — into a single `@model` that fits the
+> included example data. It is verified end-to-end with lightweight prior
+> (predictive) sampling so the full pipeline composes cleanly.
+
 ## Derived from EpiSewer
 
 This package is a Julia port of the [EpiSewer](https://github.com/adrian-lison/EpiSewer) R package by Adrian Lison and colleagues. The original model is described in:
