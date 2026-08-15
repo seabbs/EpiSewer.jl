@@ -25,24 +25,24 @@ using DataFrames
 
 Random.seed!(42)
 
-# Parse the example concentration column ("NA" for unobserved days).
-_parse_conc(v) = let s = string(v)
-    (s == "NA" || s == "missing") ? missing : parse(Float64, s)
-end
-
 outdir = "docs/fits"
 mkpath(outdir)
 chainfile = joinpath(outdir, "ww_example_chains.jls")
 
 # --- Load (or run a short) fit ------------------------------------------------
+# Fixed fit window: the chain and the conditional-extraction model must be
+# built on the SAME (y, flow) subsample, so the plots reconstruct quantities
+# for the window the chain was fitted on.
+const WINDOW = 1:55
+
 function get_chain()
     if isfile(chainfile)
         return deserialize(chainfile)
     end
     data = EpiSewer.example_data()
-    y = Vector{Union{Missing, Float64}}(_parse_conc.(data.measurements.concentration))
-    flow = Vector{Float64}(data.flows.flow)
-    mdl = as_turing_model(EpiSewer.model(flow = flow), y, length(y))
+    y = data.measurements.concentration[WINDOW]
+    flow = Vector{Float64}(data.flows.flow[WINDOW])
+    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), length(y))
     chn = sample(mdl, NUTS(0.9; max_depth = 12), MCMCThreads(), 60, 2; warmup = 60, progress = false)
     serialize(chainfile, chn)
     return chn
@@ -188,9 +188,9 @@ end
 
 # Data + model needed for the conditional evaluation.
 _expr_data = EpiSewer.example_data()
-_expr_y = Vector{Union{Missing, Float64}}(_parse_conc.(_expr_data.measurements.concentration))
-_expr_flow = Vector{Float64}(_expr_data.flows.flow)
-_expr_mdl = as_turing_model(EpiSewer.model(flow = _expr_flow), _expr_y, length(_expr_y))
+_expr_y = _expr_data.measurements.concentration[WINDOW]
+_expr_flow = Vector{Float64}(_expr_data.flows.flow[WINDOW])
+_expr_mdl = as_turing_model(EpiSewer.model(), (y = _expr_y, flow = _expr_flow), length(_expr_y))
 
 _gen = _extract_generated(chn, _expr_mdl)
 if !isnothing(_gen)
@@ -256,9 +256,9 @@ if length(key_names) >= 2
 
     # Prior sample of the same parameters from the model.
     data = EpiSewer.example_data()
-    y = Vector{Union{Missing, Float64}}(_parse_conc.(data.measurements.concentration))
-    flow = Vector{Float64}(data.flows.flow)
-    mdl = as_turing_model(EpiSewer.model(flow = flow), y, length(y))
+    y = data.measurements.concentration[WINDOW]
+    flow = Vector{Float64}(data.flows.flow[WINDOW])
+    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), length(y))
     prior_chn = sample(mdl, Prior(), 500; progress = false)
 
     prior_df = DataFrame()

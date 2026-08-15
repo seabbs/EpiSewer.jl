@@ -36,13 +36,14 @@ using TestItemRunner
     flow = Vector{Float64}(d.flows.flow[sub])
 
     Random.seed!(42)
-    mdl = EpiSewer.ww_idmodel(flow = flow)
+    mdl = EpiSewer.ww_idmodel()
 
     # It is an IDModel composing a Renewal with the flow-normalized chain.
     @test mdl isa CT.IDModel
     @test mdl.infection_model isa CT.Renewal
 
-    mdl_t = CT.as_turing_model(mdl, y_obs, n)
+    # Flow is data passed through the observation-data contract.
+    mdl_t = CT.as_turing_model(mdl, (y = y_obs, flow = flow), n)
     chn = sample(mdl_t, Prior(), 2; progress = false)
 
     @test size(chn, 1) == 2
@@ -55,11 +56,12 @@ end
     import ComposableTuringIDModels as CT
 
     d = EpiSewer.example_data()
-    mdl = EpiSewer.ww_idmodel()  # default flow from the full series
+    mdl = EpiSewer.ww_idmodel()  # no flow argument: flow is data
 
     @test mdl isa CT.IDModel
-    # Default flow: full-length flows from the example data.
-    @test length(mdl.observation_model.flow) == length(d.flows.flow)
+    # The thin FlowNormalize carries no flow; flow reaches the model through
+    # the observation-data contract at as_turing_model time.
+    @test mdl.observation_model isa EpiSewer.Sewage.FlowNormalize
 end
 
 @testitem "Composable model also exercises the FlowNormalize error model in isolation" begin
@@ -69,9 +71,9 @@ end
     d = EpiSewer.example_data()
     flow = Vector{Float64}(d.flows.flow[1:10])
 
-    fn = EpiSewer.Sewage.FlowNormalize(CT.NormalError(); flow = flow)
-    # A fully-observed series normalizes and constructs a model.
-    mdl = CT.as_turing_model(fn, fill(100.0, 10), fill(100.0, 10))
+    # Thin wrapper: flow is data passed through the observation-data contract.
+    fn = EpiSewer.Sewage.FlowNormalize(CT.NormalError())
+    mdl = CT.as_turing_model(fn, (y = fill(100.0, 10), flow = flow), fill(100.0, 10))
     @test mdl !== nothing
 end
 
@@ -89,8 +91,8 @@ end
     flow = Vector{Float64}(d.flows.flow[5:64])
 
     Random.seed!(7)
-    mdl = EpiSewer.ww_idmodel(flow = flow)
-    mdl_t = CT.as_turing_model(mdl, y_obs, length(y_obs))
+    mdl = EpiSewer.ww_idmodel()
+    mdl_t = CT.as_turing_model(mdl, (y = y_obs, flow = flow), length(y_obs))
     res = mdl_t()
 
     @test haskey(res, :generated_y_t)
@@ -110,7 +112,7 @@ end
     @test !(:model in names(EpiSewer))
     # (c) returns an IDModel
     d = EpiSewer.example_data()
-    mdl = EpiSewer.model(flow = Vector{Float64}(d.flows.flow[5:64]))
+    mdl = EpiSewer.model()
     @test mdl isa CT.IDModel
     @test mdl.infection_model isa CT.Renewal
 
@@ -124,7 +126,7 @@ end
     flow = Vector{Float64}(d.flows.flow[sub])
     Random.seed!(42)
     chn = sample(
-        CT.as_turing_model(EpiSewer.model(flow = flow), y_obs, n),
+        CT.as_turing_model(EpiSewer.model(), (y = y_obs, flow = flow), n),
         Prior(), 2; progress = false
     )
     @test size(chn, 1) == 2
@@ -142,7 +144,7 @@ end
         generation_time = fill(0.25, 4), rt = CT.RandomWalk(),
         initialisation = Normal(),
     )
-    obs = EpiSewer.Sewage.FlowNormalize(CT.NormalError(); flow = flow)
+    obs = EpiSewer.Sewage.FlowNormalize(CT.NormalError())
     mdl = EpiSewer.model(infection_model = inf, observation_model = obs)
 
     @test mdl isa CT.IDModel
@@ -166,7 +168,7 @@ end
 
     # DirectInfections instead of the default Renewal.
     inf = CT.DirectInfections(; Z = CT.RandomWalk(), initialisation = Normal())
-    mdl = EpiSewer.model(infection_model = inf, flow = flow)
+    mdl = EpiSewer.model(infection_model = inf)
 
     @test mdl isa CT.IDModel
     @test mdl.infection_model === inf

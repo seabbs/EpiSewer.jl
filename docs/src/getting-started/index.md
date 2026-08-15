@@ -13,18 +13,18 @@ and sample from the prior:
 
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
+import ComposableTuringIDModels: as_turing_model
 
-# The example concentration column carries "NA" for unobserved days; the
-# series must be longer than the shedding-load PMF (~38 days).
+# The example concentration column is already parsed to missing for unobserved
+# days (Union{Missing,Float64}); the series must be longer than the
+# shedding-load PMF (~38 days) for the default observation chain.
 d = EpiSewer.example_data()
-_parse_conc(v) = let s = string(v)
-    (s == "NA" || s == "missing") ? missing : parse(Float64, s)
-end
-y = Vector{Union{Missing, Float64}}(_parse_conc.(d.measurements.concentration))
-flow = Vector{Float64}(d.flows.flow)
+y = d.measurements.concentration
+flow = Vector{Float64}(d.flows.flow)   # flow is data
 
-mdl = EpiSewer.model(flow = flow)     # returns an IDModel
-mdl_t = as_turing_model(mdl, y, length(y))
+mdl = EpiSewer.model()                 # returns an IDModel
+# Flow is data: pass it through the observation-data contract.
+mdl_t = as_turing_model(mdl, (y = y, flow = flow), length(y))
 chn = sample(mdl_t, Prior(), 2)
 ```
 

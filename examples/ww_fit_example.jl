@@ -5,7 +5,7 @@
 #   - data: Zurich SARS-CoV-2 wastewater example (example_data())
 #   - model: EpiSewer.model() — an IDModel composing
 #       Renewal(generation_time, rt = RandomWalk())  (core)
-#       FlowNormalize(LatentDelay(Ascertainment(NormalError, lpc), shed), flow)
+#       Ascertainment(LatentDelay(FlowNormalize(LogNormalError), shed), lpc)
 #   - inference: Hamiltonian MCMC via Turing NUTS, 2 chains on 2 threads.
 #
 # Run from the package root:
@@ -24,22 +24,19 @@ using Random, Serialization
 
 Random.seed!(42)
 
-# --- Data --------------------------------------------------------------------
-# Concentration column has "NA" for missing values; parse to Union{Missing,Float64}.
-_parse_conc(v) = let s = string(v)
-    (s == "NA" || s == "missing") ? missing : parse(Float64, s)
-end
-
+# Data: example_data() already parses "NA" concentrations to missing, so the
+# concentration column is Union{Missing,Float64} as loaded.
 data = EpiSewer.example_data()
-y_obs = _parse_conc.(data.measurements.concentration)
-y_obs = Vector{Union{Missing, Float64}}(y_obs)      # 120 days
-flow = Vector{Float64}(data.flows.flow)            # mL/day
+y_obs = data.measurements.concentration            # 120 days, gc/mL
+flow = Vector{Float64}(data.flows.flow)           # mL/day — data, not a model arg
 n = length(y_obs)
 
 @info "Fitting composable wastewater model" n = n
 
 # --- Model -------------------------------------------------------------------
-mdl = as_turing_model(EpiSewer.model(flow = flow), y_obs, n)
+# The daily flow is passed through the OBSERVATION-DATA CONTRACT (y = concentrations,
+# flow = flow_vector) at as_turing_model time — flow is data, not a model argument.
+mdl = as_turing_model(EpiSewer.model(), (y = y_obs, flow = flow), n)
 
 # --- NUTS ---------------------------------------------------------------------
 # 2 chains, warmup + sampling; adapt_delta raised to 0.9 and a modest max_depth

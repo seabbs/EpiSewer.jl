@@ -85,25 +85,28 @@ and observation noise — and can be evaluated on the example data directly:
 
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
-using DataFrames: DataFrame
+import ComposableTuringIDModels: as_turing_model
 
-# The example concentration column carries "NA" for unobserved days; parse it
-# to a Union{Missing,Float64} series. The series must be longer than the
-# shedding-load PMF (~38 days, the LatentDelay lower bound).
+# The example concentration column is already parsed to missing for unobserved
+# days, so it loads as a Union{Missing,Float64} series. The series must be
+# longer than the shedding-load PMF (>=9.0 days, the LatentDelay lower bound).
 d = EpiSewer.example_data()
-_parse_conc(v) = let s = string(v)
-    (s == "NA" || s == "missing") ? missing : parse(Float64, s)
-end
-y = Vector{Union{Missing, Float64}}(_parse_conc.(d.measurements.concentration))
-flow = Vector{Float64}(d.flows.flow)
-mdl = EpiSewer.model(flow = flow)     # returns an IDModel
-mdl_t = as_turing_model(mdl, y, length(y))
+y = d.measurements.concentration            # 120 days of (gc/mL) concentrations
+flow = Vector{Float64}(d.flows.flow)        # daily flow (mL/day) — data
+mdl = EpiSewer.model()                      # returns an IDModel
+
+# Flow is data: pass it through the observation-data contract at as_turing_model
+# time (y = concentrations, flow = flow_vector), not as a model() argument.
+mdl_t = as_turing_model(mdl, (y = y, flow = flow), length(y))
 chn = sample(mdl_t, Prior(), 2)
 ```
 
 `EpiSewer.model` is **public but not exported** (call it as
 `EpiSewer.model(...)`, never `model(...)`), and its arguments are the
-composable component structs and the data needed to build them.
+composable component structs (`infection_model`, `observation_model`, and the
+`lpc_prior` parameterizing the default observation chain). The daily flow is
+observed *data* and is passed through the observation-data contract at
+`as_turing_model` time.
 
 ### Worked example: fit and plots
 
