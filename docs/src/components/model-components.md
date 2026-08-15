@@ -43,11 +43,12 @@ as possible and implement only the genuine gaps. Most of the mechanically
 distinct parts of EpiSewer — the infection process (`Renewal`), `R_t` smoothing
 (`HilbertSpaceGP` / `RandomWalk`), discrete delays (`LatentDelay`), and
 observation error (`NegativeBinomialError` / `NormalError`) — already have
-composable counterparts. The components marked **needs new struct** above are
-the wastewater-specific pieces (flow normalisation, limit-of-detection
-censoring, dPCR noise, outlier mixtures) that have no direct counterpart and
-will be implemented as small `ComposableTuringIDModels.jl`-compatible
-`Struct`s.
+composable counterparts. The wastewater-specific pieces (flow normalisation,
+limit-of-detection censoring, dPCR noise, outlier mixtures, load-per-case
+calibration) had no direct counterpart in the ecosystem and were implemented as
+small `ComposableTuringIDModels.jl`-compatible `Struct`s (`FlowNormalize`,
+`LOD`, `DigitalPCRError`, `MeasurementOutliers`, `LoadPerCase`) — see the
+status column above.
 
 ## Discretisation via CensoredDistributions
 
