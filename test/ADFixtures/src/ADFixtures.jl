@@ -75,6 +75,9 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
         out,
         DIT.Scenario{:gradient, :out}(
             lod_loglik, θ_lod; name = "lod_censored_loglik",
+            # ReverseDiff compiled traces the tape at the zero prep point;
+            # σ = 0 is a degenerate Normal (-Inf), corrupting the tape.
+            prep_args = (; x = [1.0], contexts = ()),
             res1 = with_reference ? _reference(lod_loglik, θ_lod, ()) : nothing
         )
     )
@@ -118,6 +121,9 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
         out,
         DIT.Scenario{:gradient, :out}(
             outlier_loglik, θ_out; name = "outlier_mixture_loglik",
+            # ReverseDiff compiled traces the tape at the zero prep point;
+            # p = 0 sits on the mixture's clamp boundary, corrupting the tape.
+            prep_args = (; x = [0.5], contexts = ()),
             res1 = with_reference ? _reference(outlier_loglik, θ_out, ()) : nothing
         )
     )
@@ -129,8 +135,12 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     observed_load = [120.0, 90.0, 110.0, 95.0, 105.0]
     function lpc_loglik(θ)
         lpc = θ[1]
-        Y_load = infections .* lpc
-        return sum(logpdf.(Normal.(Y_load, 10.0), observed_load))
+        # Scalar generator, not a broadcast: Enzyme cannot prove the
+        # temporary `infections .* lpc` array readonly and errors.
+        return sum(
+            logpdf(Normal(inf * lpc, 10.0), y)
+                for (inf, y) in zip(infections, observed_load)
+        )
     end
     θ_lpc = [1.0]
     push!(
@@ -148,9 +158,14 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     total_parts = [1000, 1000, 1000]
     positives = [10, 25, 40]
     function dpcr_loglik(θ)
-        Y_logcopies = θ  # per-time-point log expected copies per partition
-        p_t = 1.0 .- exp.(-exp.(Y_logcopies))
-        return sum(logpdf.(Binomial.(total_parts, clamp.(p_t, 1.0e-6, 1 - 1.0e-6)), positives))
+        # Per-time-point log expected copies per partition -> cloglog-inverse
+        # -> Binomial success probability. A generator (not a fused broadcast)
+        # keeps `n` an Int under ReverseDiff's broadcast machinery, which
+        # would otherwise promote it to a Dual and fail `Int(dual)`.
+        p_t = clamp.(1.0 .- exp.(-exp.(θ)), 1.0e-6, 1 - 1.0e-6)
+        return sum(
+            logpdf(Binomial(n, p), y) for (n, p, y) in zip(total_parts, p_t, positives)
+        )
     end
     θ_dpcr = log.([0.01, 0.025, 0.04])
     push!(
