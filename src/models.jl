@@ -9,29 +9,20 @@
             LatentDelay(FlowNormalize(LogNormalError()), distributions.shedding_dist),
             lpc_prior)) -> IDModel
 
-Build the wastewater model as a composable `ComposableTuringIDModels.IDModel`
-(the EpiSewer README example). **Public but not exported** — call it as
-`EpiSewer.model(...)`.
-
-`infection_model` and `observation_model` are the composable interface; each
-defaults to the README example assembly (a `Renewal` with random-walk `R_t`,
-and an observation chain of per-case load scaling, shedding delay, flow
-division, and relative log-normal noise). The daily flow is data, passed at
-`as_turing_model` time as `y_t = (y = concentrations, flow = flow_vector)` —
-never a `model()` argument.
+Assemble the wastewater model as a `ComposableTuringIDModels.IDModel`
+(EpiSewer's README example). **Public but not exported** — call as
+`EpiSewer.model(...)`. `infection_model` and `observation_model` are the
+composable swap points; the defaults are a `Renewal` with random-walk `R_t`
+and the per-case load → shedding delay → flow division → log-normal noise
+chain. `data` and `distributions` parameterise those defaults; the daily flow
+is data passed at `as_turing_model` time as `y_t = (y, flow)`.
 
 # Arguments
-- `data`: NamedTuple of DataFrames as returned by `EpiSewer.example_data()`.
-- `distributions`: NamedTuple of discretised PMFs (`generation_dist`,
-  `shedding_dist`, `incubation_dist`) as returned by
+- `data`, `distributions`: NamedTuples from `EpiSewer.example_data()` /
   `EpiSewer.example_distributions()`.
-- `lpc_prior`: the log-scale prior on the load shed per case (gc/case), scaled
-  onto expected infections by `Ascertainment`'s `xexpy` transform. Defaults to
-  the scale implied by the Zurich example data.
-- `infection_model`: the `AbstractInfectionModel` composable (defaults to the
-  `Renewal` above).
-- `observation_model`: the `AbstractObservationModel` composable (defaults to
-  the flow-normalized chain above).
+- `lpc_prior`: log-scale prior on the load shed per case (gc/case).
+- `infection_model`, `observation_model`: the `ComposableTuringIDModels`
+  components to compose; override either to swap that stage.
 
 # Example
 ```@example model
