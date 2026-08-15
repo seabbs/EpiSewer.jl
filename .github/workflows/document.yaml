@@ -17,5 +17,13 @@ concurrency:
 
 jobs:
   Documenter:
+    # The reusable documentation workflow deploys the built site to the
+    # gh-pages branch and opens a preview PR, so the nested job needs write
+    # scopes; this repo's default workflow permissions are read-only, so the
+    # caller must grant them explicitly.
+    permissions:
+      contents: write
+      statuses: write
+      pull-requests: write
     uses: EpiAware/.github/.github/workflows/documentation.yml@a039a6060ed897a8dc4fc724ccb3c9fca2c49a2f
     secrets: inherit  # pragma: allowlist secret
