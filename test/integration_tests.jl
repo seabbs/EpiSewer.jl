@@ -98,3 +98,57 @@ end
     @test haskey(res, :I_t)
     @test haskey(res, :Z_t)
 end
+
+@testitem "EpiSewer.model is public but not exported and returns an IDModel" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+    using Distributions, Turing, Random
+
+    # (a) accessible as EpiSewer.model
+    @test isdefined(EpiSewer, :model)
+    # (b) NOT exported
+    @test !(:model in names(EpiSewer))
+    # (c) returns an IDModel
+    d = EpiSewer.example_data()
+    mdl = EpiSewer.model(flow = Vector{Float64}(d.flows.flow[5:64]))
+    @test mdl isa CT.IDModel
+    @test mdl.infection_model isa CT.Renewal
+
+    # (d) samples via Prior on a subsample of example data
+    _parse_conc(v) = let s = string(v)
+        (s == "NA" || s == "missing") ? missing : parse(Float64, s)
+    end
+    sub = 5:64
+    n = length(sub)
+    y_obs = Vector{Union{Missing, Float64}}(_parse_conc.(d.measurements.concentration[sub]))
+    flow = Vector{Float64}(d.flows.flow[sub])
+    Random.seed!(42)
+    chn = sample(
+        CT.as_turing_model(EpiSewer.model(flow = flow), y_obs, n),
+        Prior(), 2; progress = false
+    )
+    @test size(chn, 1) == 2
+end
+
+@testitem "EpiSewer.model accepts explicit composable components" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+    using Distributions
+
+    d = EpiSewer.example_data()
+    flow = Vector{Float64}(d.flows.flow[5:64])
+
+    inf = CT.Renewal(;
+        generation_time = fill(0.25, 4), rt = CT.RandomWalk(),
+        initialisation = Normal(),
+    )
+    obs = EpiSewer.Sewage.FlowNormalize(CT.NormalError(); flow = flow)
+    mdl = EpiSewer.model(infection_model = inf, observation_model = obs)
+
+    @test mdl isa CT.IDModel
+    @test mdl.infection_model === inf
+    @test mdl.observation_model === obs
+
+    # Passing only one of the two is an error.
+    @test_throws ErrorException EpiSewer.model(infection_model = inf)
+end

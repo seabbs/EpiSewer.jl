@@ -73,11 +73,30 @@ The model is composed of six modular components:
 
 ## Getting started
 
-See the [documentation](https://seabbs.github.io/EpiSewer.jl/stable/) for a full walkthrough.
+See the [documentation](https://seabbs.github.io/EpiSewer.jl/stable/) for a
+full walkthrough.
+
+The wastewater model is assembled as a composable
+`ComposableTuringIDModels.IDModel` via the public (but not exported)
+front end `EpiSewer.model(...)`. The default assembly replicates the EpiSewer
+README example — a `Renewal` infection process with a random-walk `R_t`,
+composed with the shedding delay, load-per-case scaling, flow normalization,
+and observation noise — and can be evaluated on the example data directly:
 
 ```julia
-using EpiSewer
+using EpiSewer, ComposableTuringIDModels, Turing
+
+d = EpiSewer.example_data()
+flow = Vector{Float64}(d.flows.flow)
+y = [missing, 450.0, 740.0, missing]  # observed concentrations (gc/mL)
+mdl = EpiSewer.model(flow = flow)     # returns an IDModel
+mdl_t = as_turing_model(mdl, y, length(y))
+chn = sample(mdl_t, Prior(), 2)
 ```
+
+`EpiSewer.model` is **public but not exported** (call it as
+`EpiSewer.model(...)`, never `model(...)`), and its arguments are the
+composable component structs and the data needed to build them.
 
 <!-- standard-sections:start -->
 <!-- MANAGED by EpiAwarePackageTools.scaffold — do not edit between the
