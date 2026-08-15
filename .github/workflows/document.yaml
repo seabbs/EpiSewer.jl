@@ -17,10 +17,12 @@ concurrency:
 
 jobs:
   Documenter:
-    # The reusable documentation workflow deploys the built site to the
-    # gh-pages branch and opens a preview PR, so the nested job needs write
-    # scopes; this repo's default workflow permissions are read-only, so the
-    # caller must grant them explicitly.
+    # The reusable documentation workflow deploys to gh-pages and opens a
+    # preview PR, so it needs write scopes. This repo's default workflow
+    # permissions are read-only, so the caller grants them explicitly.
+    # NOTE: `EpiAwarePackageTools.update` regenerates this file and may drop
+    # this block (scaffold templates don't emit caller permissions); re-apply
+    # if the Documenter job starts failing with a permissions error.
     permissions:
       contents: write
       statuses: write
