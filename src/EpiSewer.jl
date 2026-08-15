@@ -13,17 +13,20 @@ using PairPlots
 using CSV
 using DataFrames
 
-export example_data, example_distributions
+export example_data, example_distributions,
+    get_discrete_gamma, get_discrete_gamma_shifted
+
+# Discretised distribution helpers (get_discrete_gamma, get_discrete_gamma_shifted)
+include("distributions.jl")
 
 # Example data loader (Zurich SARS-CoV-2 wastewater data)
 include("data.jl")
 
-# Submodules for model components (to be filled in later)
+# Submodules for model components (forecast/infections components not yet
+# implemented; re-add their includes when the modules land).
 include("measurements.jl")
 include("sampling.jl")
 include("sewage.jl")
 include("shedding.jl")
-include("infections.jl")
-include("forecast.jl")
 
 end # module EpiSewer

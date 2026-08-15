@@ -40,3 +40,23 @@ end
     chn = sample(mdl, Prior(), 2; progress = false)
     @test size(chn, 1) == 2
 end
+
+@testitem "LoadPerCase scaling matches Ascertainment at the observation stage" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+
+    # LoadPerCase at the latent stage: infections -> expected_load.
+    mdl_lpc = CT.as_turing_model(EpiSewer.Shedding.LoadPerCase(), fill(100.0, 5))
+    res_lpc = mdl_lpc()
+    @test res_lpc.expected_load ≈ fill(100.0, 5) .* res_lpc.load_per_case
+
+    # The identical transform at the observation stage is an Ascertainment
+    # with a log-scale constant factor: with FixedIntercept(log 2) the
+    # expected observations are exactly doubled (Y_t .* exp(x), x fixed at
+    # log 2), the multiplicative (exponential-scale) transform Ascertainment
+    # and LoadPerCase share.
+    obs = CT.Ascertainment(CT.NormalError(), CT.FixedIntercept(log(2.0)))
+    mdl_obs = CT.as_turing_model(obs, missing, fill(100.0, 5))
+    res_obs = mdl_obs()
+    @test res_obs.expected ≈ fill(200.0, 5)
+end

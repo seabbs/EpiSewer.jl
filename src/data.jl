@@ -48,19 +48,22 @@ end
 """
     example_distributions() -> NamedTuple
 
-Load the discretised PMFs for the EpiSewer example model assumptions as plain
-`Vector{Float64}`s: `generation_dist`, `shedding_dist`, and `incubation_dist`,
-each indexed by day. The shedding load distribution is relative to symptom
-onset.
+Discretised PMFs for the EpiSewer example model assumptions, generated on
+request from the continuous distributions used in the EpiSewer README example
+(via `CensoredDistributions`/`get_discrete_gamma*`): `generation_dist`,
+`shedding_dist`, and `incubation_dist`, each indexed by day. The shedding load
+distribution is relative to symptom onset.
+
+The values reproduce the discretisations shipped with the EpiSewer R package
+example (generation: shifted Gamma mean 3, sd 2.4; shedding load: Gamma shape
+0.929639, scale 7.241397; incubation: Gamma shape 8.5, scale 0.4).
 """
 function example_distributions()
-    function _pmf(name)
-        df = CSV.read(joinpath(_EXAMPLE_DATA_DIR, name), DataFrame)
-        return Vector{Float64}(df.prob)
-    end
     return (
-        generation_dist = _pmf("generation_dist.csv"),
-        shedding_dist = _pmf("shedding_dist.csv"),
-        incubation_dist = _pmf("incubation_dist.csv"),
+        generation_dist = get_discrete_gamma_shifted(3.0, 2.4; maxX = 15),
+        shedding_dist = get_discrete_gamma(
+            shape = 0.929639, scale = 7.241397; maxX = 38
+        ),
+        incubation_dist = get_discrete_gamma(shape = 8.5, scale = 0.4; maxX = 8),
     )
 end

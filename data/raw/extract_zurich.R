@@ -34,21 +34,15 @@ write_zurich_table(zurich$flows, "flows.csv")
 write_zurich_table(zurich$cases, "cases.csv")
 
 # --- assumptions (discretised distributions) --------------------------------
+# The assumption PMFs (generation / incubation / shedding load) are no longer
+# stored: they are generated on demand by `EpiSewer.example_distributions()`
+# from the continuous distributions via CensoredDistributions.jl
+# (`get_discrete_gamma_shifted(3.0, 2.4)` / `get_discrete_gamma(shape, scale)`).
+# The R parameter values used there match the original ww_assumptions object:
+#   generation: shifted Gamma mean = 3, sd = 2.4
+#   shedding load: Gamma shape = 0.929639, scale = 7.241397
+#   incubation: Gamma shape = 8.5, scale = 0.4
 load(file.path(src, "ww_assumptions_SARS_CoV_2_Zurich.rda"))
 assum <- ww_assumptions_SARS_CoV_2_Zurich
-
-write_pmf <- function(v, fname) {
-  write.csv(
-    data.frame(index = seq_along(v), prob = as.numeric(v)),
-    file.path(out, fname),
-    row.names = FALSE, quote = FALSE
-  )
-}
-
-write_pmf(assum$generation_dist, "generation_dist.csv")
-write_pmf(assum$shedding_dist, "shedding_dist.csv")
-write_pmf(assum$incubation_dist, "incubation_dist.csv")
-
-# Shedding load distribution is relative to symptom onset.
 cat("shedding_reference:", assum$shedding_reference, "\n")
-cat("Wrote example data to", out, "\n")
+cat("Wrote raw example data to", out, "\n")

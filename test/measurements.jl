@@ -22,16 +22,16 @@ end
     using EpiSewer
 
     CT = EpiSewer.ComposableTuringIDModels
-    # Censored (below LOD), exact (above), and missing entries all construct.
+    # Censored (reported at LOD), exact (above), and missing entries all construct.
     mdl = CT.as_turing_model(
         EpiSewer.Measurements.LOD(CT.NormalError(); lod = 50.0),
-        [10.0, missing, 120.0, 5.0, 60.0],
+        [50.0, missing, 120.0, 50.0, 60.0],
         fill(100.0, 5),
     )
     @test mdl !== nothing
 end
 
-@testitem "LOD censors values below the detection limit" begin
+@testitem "LOD scores censored and exact observations correctly" begin
     using EpiSewer
     using Distributions: Normal
     using Turing
@@ -40,21 +40,41 @@ end
     NE = CT.NormalError()  # default: σ ~ HalfNormal
     lod = 50.0
 
-    # A value far below LOD (censored) should contribute logcdf(Normal(100,1), 50),
-    # not the density at that value. Evaluate via sampling log-likelihood, which
-    # is negative (log of a probability < 1).
+    # A censored measurement is reported AT the LOD and contributes
+    # logcdf(Normal(100, σ), 50), not a density at an observed value.
     mdl_cen = CT.as_turing_model(
-        EpiSewer.Measurements.LOD(NE, lod), [10.0], [100.0]
+        EpiSewer.Measurements.LOD(NE, lod), [50.0], [100.0]
     )
     chn_cen = sample(mdl_cen, Prior(), 1; progress = false)
 
-    # A value far above LOD is treated as exact (uncensored) and scores normally.
+    # A value above LOD is exact and scores the ordinary density.
     mdl_exact = CT.as_turing_model(
         EpiSewer.Measurements.LOD(NE, lod), [150.0], [100.0]
     )
     chn_exact = sample(mdl_exact, Prior(), 1; progress = false)
 
-    # Both produce valid chains; the censored contribution is a log-probability.
+    # Both produce valid chains.
     @test size(chn_cen, 1) == 1
     @test size(chn_exact, 1) == 1
+end
+
+@testitem "LOD censored loglik matches logcdf of the underlying error distribution" begin
+    using EpiSewer
+    using Distributions: Normal, logcdf
+    using ForwardDiff
+
+    CT = EpiSewer.ComposableTuringIDModels
+    m = EpiSewer.Measurements.LOD(CT.NormalError(; std = 1.0); lod = 50.0)
+    obs_err = CT.observation_error(m, 100.0 + 1.0e-6)  # censored dist at the boundary
+    # Data at the LOD scores logcdf(Normal(100, 1), 50).
+    @test isapprox(
+        Distributions.logpdf(obs_err, 50.0),
+        logcdf(Normal(100.0, 1.0), 50.0);
+        atol = 1.0e-9,
+    )
+    # The censored contribution is AD-differentiable w.r.t. the expected value.
+    f(mu) = Distributions.logpdf(
+        CT.observation_error(EpiSewer.Measurements.LOD(CT.NormalError(; std = 1.0); lod = 50.0), mu), 50.0
+    )
+    @test isfinite(ForwardDiff.derivative(f, 100.0))
 end
