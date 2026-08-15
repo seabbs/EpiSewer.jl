@@ -1,31 +1,32 @@
-# PACKAGE-OWNED — scaffold writes this once and never overwrites it.
-# The test environment. Seeded with the deps the shared QA helpers and AD
-# harness need; add the package's own test-only deps here. EpiAwarePackageTools
-# supplies the helpers; it is registered, so it is bounded in `[compat]`.
 [deps]
 ADTypes = "47edcb42-4c32-4615-8424-f2b9edc5f35b"
+AlgebraOfGraphics = "cbdf2221-f076-402e-a563-3d30da359d67"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+ComposableTuringIDModels = "cbebd14a-101c-4997-a79f-d008ad7c07b2"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
 DifferentiationInterfaceTest = "a82114a7-5aa3-49a8-9643-716bb13727a3"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 EpiAwarePackageTools = "7aaea248-0d11-4a0d-a7dc-86da30abb951"
+EpiSewer = "2df4a3a2-2113-4925-824e-30cf3f139497"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+MCMCChains = "c7f686f2-ff18-58e9-bc7b-31028e88f75d"
+PairPlots = "43a3c2be-4208-490b-832a-a21dcd55d7da"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Runic = "62bfec6d-59d7-401d-8490-b29ee721c001"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
-EpiSewer = "2df4a3a2-2113-4925-824e-30cf3f139497"
+Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 
-# Bounded compat for the seeded QA + AD deps. The package under test is
-# pinned by `[sources]`, so carries no compat entry.
-# Add a bound for each test-only dep you add.
-# Every bound here has to resolve on every leg of the `test.yaml` matrix,
-# lts included: JET reaches 0.9 for that reason (it publishes nothing past
-# 0.9.18 for 1.10), matching the no-AD variant.
+[sources]
+EpiSewer = {path = ".."}
+
 [compat]
 ADTypes = "1"
 Aqua = "0.8"
@@ -42,6 +43,3 @@ Runic = "1"
 Test = "1"
 TestItemRunner = "1"
 TestItems = "1"
-
-[sources]
-EpiSewer = {path = ".."}
