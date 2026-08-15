@@ -59,9 +59,15 @@ end
     mdl = EpiSewer.ww_idmodel()  # no flow argument: flow is data
 
     @test mdl isa CT.IDModel
-    # The thin FlowNormalize carries no flow; flow reaches the model through
-    # the observation-data contract at as_turing_model time.
-    @test mdl.observation_model isa EpiSewer.Sewage.FlowNormalize
+    # The default observation chain is Ascertainment(LatentDelay(FlowNormalize(
+    # LogNormalError()))): load-per-case scaling, shedding delay, and the thin
+    # flow division innermost. The thin FlowNormalize carries no flow; flow
+    # reaches the model through the observation-data contract at
+    # as_turing_model time.
+    @test mdl.observation_model isa CT.Ascertainment
+    @test mdl.observation_model.model isa CT.LatentDelay
+    @test mdl.observation_model.model.model isa EpiSewer.Sewage.FlowNormalize
+    @test mdl.observation_model.model.model.error_model isa EpiSewer.Measurements.LogNormalError
 end
 
 @testitem "Composable model also exercises the FlowNormalize error model in isolation" begin
@@ -83,11 +89,9 @@ end
     using Distributions, Random
 
     d = EpiSewer.example_data()
-    conc = [
-        string(v) == "NA" ? missing : parse(Float64, string(v))
-            for v in d.measurements.concentration[5:64]
-    ]
-    y_obs = Vector{Union{Missing, Float64}}(conc)
+    # example_data now returns a typed Union{Missing,Float64} concentration
+    # column, so the series is used directly (no string parsing).
+    y_obs = Vector{Union{Missing, Float64}}(d.measurements.concentration[5:64])
     flow = Vector{Float64}(d.flows.flow[5:64])
 
     Random.seed!(7)
@@ -155,7 +159,8 @@ end
     mdl_override = EpiSewer.model(infection_model = inf)
     @test mdl_override isa CT.IDModel
     @test mdl_override.infection_model === inf
-    @test mdl_override.observation_model isa EpiSewer.Sewage.FlowNormalize
+    @test mdl_override.observation_model isa CT.Ascertainment
+    @test mdl_override.observation_model.model.model isa EpiSewer.Sewage.FlowNormalize
 end
 
 @testitem "EpiSewer.model accepts a custom infection model as default-arg override" begin
@@ -173,5 +178,6 @@ end
     @test mdl isa CT.IDModel
     @test mdl.infection_model === inf
     # The default observation chain is still assembled.
-    @test mdl.observation_model isa EpiSewer.Sewage.FlowNormalize
+    @test mdl.observation_model isa CT.Ascertainment
+    @test mdl.observation_model.model.model isa EpiSewer.Sewage.FlowNormalize
 end

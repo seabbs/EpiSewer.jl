@@ -60,12 +60,16 @@ end
 
 @testitem "LOD censored loglik matches logcdf of the underlying error distribution" begin
     using EpiSewer
-    using Distributions: Normal, logcdf
+    using Distributions: Distributions, Normal, logcdf
     using ForwardDiff
 
     CT = EpiSewer.ComposableTuringIDModels
-    m = EpiSewer.Measurements.LOD(CT.NormalError(; std = 1.0); lod = 50.0)
-    obs_err = CT.observation_error(m, 100.0 + 1.0e-6)  # censored dist at the boundary
+    # A fixed observation-noise sigma (degenerate Normal prior) so the censored
+    # likelihood is exactly logcdf(Normal(100, 1), 50).
+    m = EpiSewer.Measurements.LOD(CT.NormalError(; std = Normal(1.0, 0.0)); lod = 50.0)
+    # σ = 1.0 is passed as the observation-error prior; the censored dist at
+    # the boundary is Censored(Normal(100, 1), 50, Inf).
+    obs_err = CT.observation_error(m, 100.0, 1.0)
     # Data at the LOD scores logcdf(Normal(100, 1), 50).
     @test isapprox(
         Distributions.logpdf(obs_err, 50.0),
@@ -74,7 +78,9 @@ end
     )
     # The censored contribution is AD-differentiable w.r.t. the expected value.
     f(mu) = Distributions.logpdf(
-        CT.observation_error(EpiSewer.Measurements.LOD(CT.NormalError(; std = 1.0); lod = 50.0), mu), 50.0
+        CT.observation_error(
+            EpiSewer.Measurements.LOD(CT.NormalError(; std = Normal(1.0, 0.0)); lod = 50.0), mu, 1.0
+        ), 50.0
     )
     @test isfinite(ForwardDiff.derivative(f, 100.0))
 end

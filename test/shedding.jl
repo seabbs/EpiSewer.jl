@@ -11,7 +11,7 @@ end
 
 @testitem "LoadPerCase accepts a custom positive prior" begin
     using EpiSewer
-    using Distributions: LogNormal
+    using Distributions: Distributions, LogNormal
 
     m = EpiSewer.Shedding.LoadPerCase(load_per_case = LogNormal(0.0, 0.5))
     @test m.load_per_case isa Distributions.LogNormal
