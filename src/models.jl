@@ -1,7 +1,7 @@
 # Model front end: the README example as a composable `IDModel`.
 
 """
-    model(; data = example_data(), distributions = example_distributions(),
+    model(; distributions = example_distributions(),
         lpc_prior = Normal(log(2e11), 0.5),
         infection_model = Renewal(generation_time = distributions.generation_dist,
             rt = RandomWalk(), initialisation = Normal()),
@@ -14,11 +14,12 @@ Assemble the wastewater model as a `ComposableTuringIDModels.IDModel`
 `EpiSewer.model(...)`. `infection_model` and `observation_model` are the
 composable swap points; the defaults are a `Renewal` with random-walk `R_t`
 and the per-case load → shedding delay → flow division → log-normal noise
-chain. `data` and `distributions` parameterise those defaults; the daily flow
-is data passed at `as_turing_model` time as `y_t = (y, flow)`.
+chain. `distributions` supplies the PMFs those defaults convolve with; the
+observed series and the daily flow are both data, passed at `as_turing_model`
+time as `y_t = (y = concentrations, flow = flow)`.
 
 # Arguments
-- `data`, `distributions`: NamedTuples from `EpiSewer.example_data()` /
+- `distributions`: the delay PMFs, as returned by
   `EpiSewer.example_distributions()`.
 - `lpc_prior`: log-scale prior on the load shed per case (gc/case).
 - `infection_model`, `observation_model`: the `ComposableTuringIDModels`
@@ -36,7 +37,6 @@ chn = sample(mdl, Prior(), 2)
 ```
 """
 function model(;
-        data = example_data(),
         distributions = example_distributions(),
         lpc_prior = Normal(log(2.0e11), 0.5),
         infection_model = Renewal(

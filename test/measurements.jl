@@ -85,6 +85,47 @@ end
     @test isfinite(ForwardDiff.derivative(f, 100.0))
 end
 
+@testitem "LogNormalError parameterises the CV of the measurement error" begin
+    using EpiSewer
+    using Distributions: Distributions, mean, std, insupport
+    using ForwardDiff
+
+    # σ is the coefficient of variation: the real-space mean is Y_t and the
+    # real-space sd is σ · Y_t, whatever the scale of Y_t. `observation_error`
+    # returns a `ReparameterisedDistributions.Reparameterised` over `LogNormal`,
+    # so the contract is tested through the distribution interface rather than
+    # the concrete type.
+    for Y_t in (1.0, 100.0, 3.0e3), σ in (0.05, 0.3)
+        d = EpiSewer.observation_error(EpiSewer.LogNormalError(), Y_t, σ)
+        @test d isa Distributions.Distribution
+        @test mean(d) ≈ Y_t rtol = 1.0e-8
+        @test std(d) / mean(d) ≈ σ rtol = 1.0e-8
+        # Log-normal support: positive concentrations only.
+        @test insupport(d, Y_t)
+        @test !insupport(d, -1.0)
+    end
+
+    # The log-density is differentiable w.r.t. the expected concentration.
+    f(Y_t) = Distributions.logpdf(
+        EpiSewer.observation_error(EpiSewer.LogNormalError(), Y_t, 0.1), 95.0
+    )
+    @test isfinite(ForwardDiff.derivative(f, 100.0))
+end
+
+@testitem "LogNormalError rejects a non-finite expected value instead of throwing" begin
+    using EpiSewer
+    using Distributions: Distributions
+
+    # An exploding latent draw must score -Inf, not raise out of the moment
+    # validation in `reparameterise`.
+    for bad in (Inf, NaN)
+        d = EpiSewer.observation_error(EpiSewer.LogNormalError(), bad, 0.1)
+        @test Distributions.logpdf(d, 100.0) == -Inf
+    end
+    d = EpiSewer.observation_error(EpiSewer.LogNormalError(), 100.0, Inf)
+    @test Distributions.logpdf(d, 100.0) == -Inf
+end
+
 @testitem "DigitalPCRError scores dPCR partition counts via transform composition" begin
     using EpiSewer
     using Turing, Distributions
