@@ -93,9 +93,14 @@ scored. This is the composable equivalent of the R model's `L + S + D` lead-in.
   chain that splits into parallel streams.
 
 # Example
+The `n` to pass for a given observed series, with the default chain:
+
 ```@example observation_lead_in
 using EpiSewer
-EpiSewer.observation_lead_in(EpiSewer.model())
+mdl = EpiSewer.model()
+y = EpiSewer.example_data().measurements.concentration
+lead_in = EpiSewer.observation_lead_in(mdl)
+(observations = length(y), lead_in = lead_in, n = length(y) + lead_in)
 ```
 """
 observation_lead_in(mdl::IDModel) = _lead_in(mdl.observation_model)
