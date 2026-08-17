@@ -59,12 +59,16 @@ mdl = as_turing_model(EpiSewer.model(), (y = y_obs, flow = flow), n)
 # for the correlated latent process. Increase iter_warmup/iter_sampling for a
 # higher-quality posterior (the README example used 4 chains; we use 2 per the
 # replication plan, 2 threads).
+const ADAPT_DELTA = 0.9
+const MAX_DEPTH = 12
+const N_CHAINS = 2
 n_warmup, n_samples = 400, 300
-@info "Sampling" n_warmup = n_warmup n_samples = n_samples
-chn = sample(
-    mdl, NUTS(0.9; max_depth = 12),
-    MCMCThreads(), n_samples, 2; warmup = n_warmup, progress = true,
+@info "Sampling" n_warmup = n_warmup n_samples = n_samples chains = N_CHAINS
+fit_seconds = @elapsed chn = sample(
+    mdl, NUTS(ADAPT_DELTA; max_depth = MAX_DEPTH),
+    MCMCThreads(), n_samples, N_CHAINS; warmup = n_warmup, progress = true,
 )
+@info "Sampling wall clock" seconds = round(fit_seconds; digits = 1)
 
 # --- Diagnostics --------------------------------------------------------------
 @info "Sampling complete" size(chn) = size(chn)
@@ -84,18 +88,67 @@ function _fit_diagnostics(chn)
     return (; max_rhat = max_rhat, min_ess = min_ess)
 end
 
-try
-    diag = _fit_diagnostics(chn)
-    @info "Convergence diagnostics" \
-        max_rhat = round(diag.max_rhat; digits = 3) \
-        min_ess = round(diag.min_ess; digits = 1)
-catch err
-    @warn "Could not compute convergence diagnostics" exception = err
+# Threshold for failing the script. 1.05 is the conventional bound; 1.01 is
+# stricter and is what a well-behaved fit of this size should reach, but it also
+# reds on a fit that is merely under-run rather than wrong, so the looser bound
+# is used and the measured value is recorded either way.
+const MAX_RHAT = 1.05
+
+diag = _fit_diagnostics(chn)
+@info "Convergence diagnostics" \
+    max_rhat = round(diag.max_rhat; digits = 4) \
+    min_ess = round(diag.min_ess; digits = 1)
+
+# Record the diagnostics next to the plots. Previously they were computed, logged
+# and discarded, so "a clean and convergent fit" had no evidence behind it
+# anywhere in the repository (#16).
+diagdir = joinpath("docs", "fits")
+mkpath(diagdir)
+open(joinpath(diagdir, "fit_diagnostics.md"), "w") do io
+    println(io, "# Worked-example fit diagnostics")
+    println(io)
+    println(io, "Written by `examples/ww_fit_example.jl`. Regenerate with:")
+    println(io)
+    println(io, "    julia --project=docs --threads=2 examples/ww_fit_example.jl")
+    println(io)
+    println(io, "## Sampler")
+    println(io)
+    println(io, "- `NUTS($ADAPT_DELTA; max_depth = $MAX_DEPTH)`")
+    println(io, "- $N_CHAINS chains via `MCMCThreads()`, $n_warmup warmup + $n_samples sampling")
+    println(io)
+    println(io, "## Data")
+    println(io)
+    println(io, "- window: $(first(data.measurements.date)) to $(last(data.measurements.date))")
+    println(io, "- observed days: $n_observed of $(length(y_obs)) (Mondays and Thursdays only, as the R example)")
+    println(io, "- infection series length `n`: $n (observations + lead-in $(EpiSewer.observation_lead_in(EpiSewer.model())))")
+    println(io)
+    println(io, "## Convergence")
+    println(io)
+    println(io, "- max split R-hat: $(round(diag.max_rhat; digits = 4)) (threshold $MAX_RHAT)")
+    println(io, "- min ESS: $(round(diag.min_ess; digits = 1))")
+    println(io, "- wall clock: $(round(fit_seconds; digits = 1)) s")
 end
+@info "Wrote diagnostics" path = joinpath(diagdir, "fit_diagnostics.md")
 
 # --- Save ---------------------------------------------------------------------
 outdir = joinpath("docs", "fits")
 mkpath(outdir)
 outfile = joinpath(outdir, "ww_example_chains.jls")
-serialize(outfile, chn)
-@info "Saved fitted chains" path = outfile
+# Serialise the fit INPUTS alongside the chain. The plotting script has to
+# rebuild the model to extract quantities the chain does not store, and it must
+# use the same `(y, flow, n)` to do so — previously it re-derived them from its
+# own hard-coded window and silently reconstructed on different data from the
+# one the chain was fitted on. Storing them together makes agreement structural
+# rather than a convention two files have to remember.
+serialize(outfile, (; chn = chn, y = y_obs, flow = flow, n = n))
+@info "Saved fitted chains and their inputs" path = outfile n = n
+
+# Fail loudly, but only after saving: a chain that did not converge is still
+# worth inspecting, and the plotting script refuses to run without this file, so
+# a failed fit cannot silently produce the plots the README presents as results.
+diag.max_rhat <= MAX_RHAT || error(
+    "fit did not converge: max R-hat $(round(diag.max_rhat; digits = 4)) " *
+        "exceeds $MAX_RHAT. The chain and diagnostics were still written for " *
+        "inspection. Increase warmup/sampling or revisit the model rather than " *
+        "publishing plots from this chain."
+)

@@ -29,27 +29,33 @@ outdir = "docs/fits"
 mkpath(outdir)
 chainfile = joinpath(outdir, "ww_example_chains.jls")
 
-# --- Load (or run a short) fit ------------------------------------------------
-# Fixed fit window: the chain and the conditional-extraction model must be
-# built on the SAME (y, flow) subsample, so the plots reconstruct quantities
-# for the window the chain was fitted on.
-const WINDOW = 1:55
-
-function get_chain()
-    if isfile(chainfile)
-        return deserialize(chainfile)
-    end
-    data = EpiSewer.example_data()
-    y = data.measurements.concentration[WINDOW]
-    flow = Vector{Float64}(data.flows.flow[WINDOW])
-    n = length(y) + EpiSewer.observation_lead_in(EpiSewer.model())
-    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), n)
-    chn = sample(mdl, NUTS(0.9; max_depth = 12), MCMCThreads(), 60, 2; warmup = 60, progress = false)
-    serialize(chainfile, chn)
-    return chn
+# --- Load the fit -------------------------------------------------------------
+# The chain and the model this script rebuilds to extract unstored quantities
+# must use the SAME `(y, flow, n)`. They now come out of the fit's own artefact
+# rather than being re-derived here: this script used to slice its own
+# hard-coded 55-day window out of the DENSE series while the chain had been
+# fitted over the full sparse one, so every reconstructed quantity was computed
+# against data the chain had never seen.
+#
+# There is deliberately no fallback fit. It used to run its own 60-draw sample
+# when the chain file was absent, which is where the committed plots actually
+# came from — not the 400+300 fit the README describes. A missing chain is now
+# an error, because a plot from a quietly different model is worse than no plot.
+function load_fit()
+    isfile(chainfile) || error(
+        "no fitted chain at $chainfile. Run the fit first:\n" *
+            "    julia --project=docs --threads=2 examples/ww_fit_example.jl"
+    )
+    fit = deserialize(chainfile)
+    fit isa NamedTuple && issubset((:chn, :y, :flow, :n), keys(fit)) || error(
+        "$chainfile predates the fit script writing its inputs alongside the " *
+            "chain. Re-run examples/ww_fit_example.jl to regenerate it."
+    )
+    return fit
 end
 
-chn = get_chain()
+fit = load_fit()
+chn = fit.chn
 
 # --- Chain-key guard -----------------------------------------------------------
 # The chain keys follow the FlexiChains "Parameter(...)" format and the model
@@ -187,11 +193,11 @@ function _series_plot(title, ylabel, med, lo, hi)
     return fig
 end
 
-# Data + model needed for the conditional evaluation.
-_expr_data = EpiSewer.example_data()
-_expr_y = _expr_data.measurements.concentration[WINDOW]
-_expr_flow = Vector{Float64}(_expr_data.flows.flow[WINDOW])
-_expr_n = length(_expr_y) + EpiSewer.observation_lead_in(EpiSewer.model())
+# Data + model needed for the conditional evaluation, taken from the fit's own
+# inputs so the reconstruction is against the series the chain was fitted on.
+_expr_y = fit.y
+_expr_flow = fit.flow
+_expr_n = fit.n
 _expr_mdl = as_turing_model(
     EpiSewer.model(), (y = _expr_y, flow = _expr_flow), _expr_n
 )
@@ -258,12 +264,12 @@ if length(key_names) >= 2
         post_df[!, nm] = vec(chn[sym])
     end
 
-    # Prior sample of the same parameters from the model.
-    data = EpiSewer.example_data()
-    y = data.measurements.concentration[WINDOW]
-    flow = Vector{Float64}(data.flows.flow[WINDOW])
-    n = length(y) + EpiSewer.observation_lead_in(EpiSewer.model())
-    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), n)
+    # Prior sample of the same parameters, from the model as fitted: the prior
+    # and posterior panels must come from the same model for the comparison to
+    # mean anything.
+    mdl = as_turing_model(
+        EpiSewer.model(), (y = fit.y, flow = fit.flow), fit.n
+    )
     prior_chn = sample(mdl, Prior(), 500; progress = false)
 
     prior_df = DataFrame()

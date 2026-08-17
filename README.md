@@ -132,6 +132,16 @@ Both scripts run in the docs environment: the package itself depends only on wha
 the model needs, so the inference-output and plotting packages the scripts use
 (`MCMCChains`, `CairoMakie`, `PairPlots`) are declared in `docs/Project.toml`.
 
+> ⚠️ **The plots below predate the model corrections of 2026-08-17 and have not
+> been regenerated.** They were produced before the generation interval was
+> fixed (it was a day too short), before the incubation convolution was added,
+> while 44 of 120 observations were silently unscored, and from the dense series
+> rather than the sparse Monday/Thursday one this example now fits. Re-run
+> `examples/ww_fit_example.jl` and `examples/ww_plots.jl` to replace them;
+> `docs/fits/fit_diagnostics.md` records the convergence of whichever fit
+> produced the current set. Tracked in
+> [#16](https://github.com/seabbs/EpiSewer.jl/issues/16).
+
 The fitted effective reproduction number `R_t` (reconstructed from the
 renewal latent):
 
