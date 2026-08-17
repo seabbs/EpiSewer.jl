@@ -126,32 +126,58 @@ end
     @test Distributions.logpdf(d, 100.0) == -Inf
 end
 
-@testitem "LogNormalError scores an invalid proposal at the input's own type" begin
+@testitem "LogNormalError scores finite-but-invalid moments as -Inf" begin
+    using EpiSewer
+    using Distributions: Distributions
+
+    # A non-positive expected concentration or CV is finite, so it passes the
+    # non-finite guard and is rejected by `Reparameterised`'s own moment
+    # validation rather than throwing out of the constructor.
+    for (Y_t, σ) in ((-1.0, 0.1), (0.0, 0.1), (100.0, -0.1), (100.0, 0.0))
+        d = EpiSewer.observation_error(EpiSewer.LogNormalError(), Y_t, σ)
+        @test Distributions.logpdf(d, 100.0) == -Inf
+    end
+end
+
+@testitem "LogNormalError rejects finite-invalid moments at the input's type" begin
     using EpiSewer
     using Distributions: Distributions
     using ForwardDiff
 
-    # The rejection is `Reparameterised`'s own, so `-Inf` comes back as a
-    # `Dual` rather than a bare `Float64` that would break a gradient tape.
+    # On the `check_args = false` path the rejection is `Reparameterised`'s own,
+    # so `-Inf` comes back as a `Dual` rather than a bare `Float64` that would
+    # break a gradient tape.
     d = EpiSewer.observation_error(
-        EpiSewer.LogNormalError(), ForwardDiff.Dual(Inf, 1.0), 0.1
+        EpiSewer.LogNormalError(), ForwardDiff.Dual(-1.0, 1.0), 0.1
     )
     lp = Distributions.logpdf(d, 100.0)
     @test lp isa ForwardDiff.Dual
     @test ForwardDiff.value(lp) == -Inf
 end
 
-@testitem "LOD(LogNormalError()) throws at the LOD on an invalid proposal" begin
+@testitem "LOD(LogNormalError()) scores -Inf at the LOD on a non-finite draw" begin
     using EpiSewer
     using Distributions: Distributions
 
-    # `Censored`'s boundary term is a `logcdf`, and `Reparameterised` guards
-    # only `logpdf`/`pdf` with `valid_moments` — its `logcdf` routes through
-    # `native`, which throws. So an exploding latent draw scores `-Inf` above
-    # the LOD but raises at it. Upstream gap in ReparameterisedDistributions;
-    # not something to guard around in `observation_error`.
+    # Regression test. `Censored`'s boundary term is a `logcdf`, and
+    # `Reparameterised` guards only `logpdf`/`pdf` — its `logcdf` routes through
+    # `native`, which throws. The non-finite sentinel in `observation_error` is
+    # a plain `LogNormal`, so both terms score `-Inf` and the composition stays
+    # safe to censor. `y_t == lod` is the documented data convention, so the
+    # boundary is the reachable case, not a corner.
+    for bad in (Inf, NaN)
+        d = EpiSewer.observation_error(
+            EpiSewer.LOD(EpiSewer.LogNormalError(); lod = 50.0), bad, 0.1
+        )
+        @test Distributions.logpdf(d, 50.0) == -Inf
+        @test Distributions.logpdf(d, 100.0) == -Inf
+    end
+
+    # A finite-but-invalid draw still reaches the unguarded `logcdf`, so the
+    # boundary raises there. Left broken deliberately: the fix belongs upstream
+    # in ReparameterisedDistributions, not in a third guard here.
     d = EpiSewer.observation_error(
-        EpiSewer.LOD(EpiSewer.LogNormalError(); lod = 50.0), Inf, 0.1
+        EpiSewer.LOD(EpiSewer.LogNormalError(); lod = 50.0), -1.0, 0.1
     )
     @test Distributions.logpdf(d, 100.0) == -Inf
     @test_broken Distributions.logpdf(d, 50.0) == -Inf

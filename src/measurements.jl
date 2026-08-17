@@ -122,10 +122,21 @@ LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
     return (; σ = σ)
 end
 
-# An exploding latent draw can drive `Y_t` (or `σ`) non-finite. No hand guard
-# is needed: `Reparameterised` scores an invalid proposal as `-Inf` through its
-# own `valid_moments` check, returning it at the input's own type so an AD tape
-# survives. `check_args = false` is what routes us onto that path — the checking
-# constructor would instead throw a `DomainError` mid-gradient.
-observation_error(::LogNormalError, Y_t, σ) =
-    reparameterise(LogNormal; mean = Y_t, sd = σ * Y_t, check_args = false)
+function observation_error(::LogNormalError, Y_t, σ)
+    # Two guards covering disjoint failures, both reachable from a diverging
+    # sampler.
+    #
+    # A non-finite `Y_t` or `σ` returns a plain `LogNormal` sentinel, whose
+    # `logcdf` is `-Inf` as well as its `logpdf`. That is what keeps the result
+    # safe to left-censor in `LOD`: a censored distribution's boundary term is a
+    # `logcdf`, and `Reparameterised` guards only `logpdf`/`pdf`, routing
+    # `logcdf` through `native`, which throws (see the boundary test).
+    # A bare `Float64` `-Inf` is deliberate here — giving the sentinel the
+    # input's type instead makes AD return a `NaN` partial rather than `0.0`.
+    isfinite(Y_t) && isfinite(σ) || return LogNormal(Inf, 1.0)
+    # Finite but invalid moments (`Y_t <= 0`, `σ <= 0`) reach `Reparameterised`,
+    # whose `logpdf` scores them `-Inf` at the input's own type. `check_args =
+    # false` is what routes us there: the checking constructor validates the
+    # moments and would throw a `DomainError` mid-gradient instead.
+    return reparameterise(LogNormal; mean = Y_t, sd = σ * Y_t, check_args = false)
+end
