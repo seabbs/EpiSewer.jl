@@ -168,13 +168,25 @@ end
 
     idm = EpiSewer.model()
     inf = idm.infection_model
-    # A Gaussian-process R_t, as R's `R_estimate_gp()`.
-    @test inf.rt isa CT.HilbertSpaceGP
-    @test inf.rt.kernel isa CT.Matern32Kernel
-    @test inf.rt.c == 3.0
-    # R's magnitude prior, which is in log-R_t units and so carries over.
-    @test mean(inf.rt.marginal_std.untruncated) ≈ 0.125
-    @test std(inf.rt.marginal_std.untruncated) ≈ 0.025
+    # R's `R_estimate_gp()` sums a short-term and a long-term Matern-3/2 GP.
+    @test inf.rt isa CT.CombineLatentModels
+    @test length(inf.rt.models) == 2
+    # A non-empty prefix wraps each component, which is what keeps the two GPs'
+    # `σ` and `ℓ` distinct in the chain.
+    @test all(m -> m isa CT.PrefixLatentModel, inf.rt.models)
+    short, long = (m.model for m in inf.rt.models)
+    @test all(g -> g isa CT.HilbertSpaceGP, (short, long))
+    @test all(g -> g.kernel isa CT.Matern32Kernel, (short, long))
+    @test all(g -> g.c == 3.0, (short, long))
+    # Both magnitude priors, in log-R_t units and so carrying over directly.
+    # The long-term term has the larger magnitude and so most of the variability.
+    @test mean(short.marginal_std.untruncated) ≈ 0.125
+    @test std(short.marginal_std.untruncated) ≈ 0.025
+    @test mean(long.marginal_std.untruncated) ≈ 0.25
+    @test std(long.marginal_std.untruncated) ≈ 0.05
+    # The long-term length scale is four times the short-term one, in days.
+    @test mean(long.length_scale.untruncated) ≈
+        4 * mean(short.length_scale.untruncated) rtol = 1.0e-12
     # Stochastic infections, as R's `infection_noise_estimate()`.
     @test any(m -> m isa EpiSewer.InfectionNoise, inf.recurrent_step.modifiers)
     # Seeding at the scale the data implies, not at one infection.

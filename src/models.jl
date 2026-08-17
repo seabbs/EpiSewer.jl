@@ -13,11 +13,18 @@ const _GENERATION_TIME = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1
 const _SHEDDING_DIST = Gamma(0.929639, 7.241397)
 const _INCUBATION_DIST = Gamma(8.5, 0.4)
 
-# EpiSewer's `R_estimate_gp()` prior on the length scale, in days
-# (`.resources/EpiSewer/R/model_infections.R`: `length_scale_prior_mu = 7*3`,
-# `length_scale_prior_sigma = 7/2`).
-const _GP_LENGTH_SCALE_DAYS = 21.0
-const _GP_LENGTH_SCALE_SD_DAYS = 3.5
+# EpiSewer's `R_estimate_gp()` priors, in days
+# (`.resources/EpiSewer/R/model_infections.R`). It sums a short-term and a
+# long-term Matérn-3/2 GP, so both terms are needed: the long-term one carries
+# the larger magnitude, and dropping it would leave `R_t` far tighter than R's.
+const _GP_LENGTH_SCALE_DAYS = 21.0          # length_scale_prior_mu = 7*3
+const _GP_LENGTH_SCALE_SD_DAYS = 3.5        # length_scale_prior_sigma = 7/2
+const _GP_MAGNITUDE = 0.125                 # magnitude_prior_mu
+const _GP_MAGNITUDE_SD = 0.025              # magnitude_prior_sigma
+const _GP_LONG_LENGTH_SCALE_DAYS = 84.0     # long_length_scale_prior_mu = 7*4*3
+const _GP_LONG_LENGTH_SCALE_SD_DAYS = 7.0   # long_length_scale_prior_sigma
+const _GP_LONG_MAGNITUDE = 0.25             # long_magnitude_prior_mu
+const _GP_LONG_MAGNITUDE_SD = 0.05          # long_magnitude_prior_sigma
 
 """
     gp_length_scale(days, n; sd = nothing)
@@ -104,26 +111,43 @@ function crude_initial_infections(concentration, flow, load_per_case; days = 7)
     return 0.1 + c * (sum(q) / length(q)) / load_per_case
 end
 
-# EpiSewer's default `R_t` prior: a Hilbert-space approximate Gaussian process
-# (`R_estimate_gp()`, R's `model_infections()` default). The scale-free settings
-# transfer exactly — the Matérn 3/2 kernel (`matern_nu = c(3/2, ...)`), the
-# boundary factor (`boundary_factor = 3`) and the magnitude prior
-# (`magnitude_prior_mu = 0.125`, `magnitude_prior_sigma = 0.025`), which is in
-# log-`R_t` units either way.
+# EpiSewer's default `R_t` prior: the **sum** of a short-term and a long-term
+# Hilbert-space approximate Gaussian process (`R_estimate_gp()`, R's
+# `model_infections()` default). The scale-free settings transfer exactly — the
+# Matérn 3/2 kernel (`matern_nu = c(3/2, ...)`), the boundary factor
+# (`boundary_factor = 3`) and both magnitude priors, which are in log-`R_t` units
+# either way.
 #
-# The length scale does not: R states it in days, and `HilbertSpaceGP`
-# standardises the index, so it depends on the series length. `n` is not known
-# when the model is assembled, so the default is R's 21 ± 3.5 days converted at
-# the length of the example series. `gp_length_scale` does the conversion for a
-# materially different series length.
-function _default_rt(; n = 164)
-    return HilbertSpaceGP(
+# Both terms are needed rather than the short one alone: the long-term magnitude
+# (0.25) is twice the short-term one (0.125), so it carries most of the prior
+# variability in `R_t`. `CombineLatentModels` sums them and prefixes each term's
+# variables, which is also what keeps their `σ` and `ℓ` distinct.
+#
+# The length scales do not transfer directly: R states them in days, and
+# `HilbertSpaceGP` standardises the index, so they depend on the series length.
+# `n` is not known when the model is assembled, so the default converts R's
+# priors at the length of the example series; `gp_length_scale` does the
+# conversion for a materially different one.
+function _default_rt(; n = 164, m = 20)
+    short = HilbertSpaceGP(
         length_scale = gp_length_scale(
             _GP_LENGTH_SCALE_DAYS, n; sd = _GP_LENGTH_SCALE_SD_DAYS
         ),
-        marginal_std = truncated(Normal(0.125, 0.025), 0.0, Inf),
-        m = 20, c = 3.0, kernel = Matern32Kernel(),
+        marginal_std = truncated(
+            Normal(_GP_MAGNITUDE, _GP_MAGNITUDE_SD), 0.0, Inf
+        ),
+        m = m, c = 3.0, kernel = Matern32Kernel(),
     )
+    long = HilbertSpaceGP(
+        length_scale = gp_length_scale(
+            _GP_LONG_LENGTH_SCALE_DAYS, n; sd = _GP_LONG_LENGTH_SCALE_SD_DAYS
+        ),
+        marginal_std = truncated(
+            Normal(_GP_LONG_MAGNITUDE, _GP_LONG_MAGNITUDE_SD), 0.0, Inf
+        ),
+        m = m, c = 3.0, kernel = Matern32Kernel(),
+    )
+    return CombineLatentModels([short, long], ["gp_short", "gp_long"])
 end
 
 # Compose one delay onto an observation model. `LatentDelay`'s discretisation

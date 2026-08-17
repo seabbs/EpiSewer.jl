@@ -11,7 +11,8 @@ using Distributions: cdf, censored, ContinuousDistribution, Gamma,
 using Dates: Date
 using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,
-    AbstractRenewalModifier, Ascertainment, BinomialError, FixedIntercept,
+    AbstractRenewalModifier, Ascertainment, BinomialError,
+    CombineLatentModels, FixedIntercept,
     HalfNormal, HilbertSpaceGP, IID, LatentDelay, Matern32Kernel,
     NormalError, PriorLike, Renewal, RandomWalk, TransformObservationModel,
     UncertainDelay, IDModel
