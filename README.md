@@ -62,7 +62,7 @@ mdl = EpiSewer.model()
 ```
 
 That prints as a tree of named parts rather than one monolithic model, which is the point of the port.
-The parts are a `Renewal` infection process with a random-walk `R_t`, observed through the incubation delay, the per-case shed load, the shedding delay, division by flow, and log-normal measurement noise.
+The parts are a `Renewal` infection process with stochastic infections and a `HilbertSpaceGP` prior on `R_t`, observed through the incubation delay, the per-case shed load, the shedding delay, division by flow, and log-normal measurement noise.
 
 Size the infection series.
 Each `LatentDelay` in the observation chain drops the partially observed head of its convolution, so the infections need the chain's lead-in on top of the observed days.
