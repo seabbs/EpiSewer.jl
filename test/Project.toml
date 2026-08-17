@@ -41,11 +41,5 @@ JET = "0.9, 0.10, 0.12"
 Pkg = "1"
 Runic = "1"
 Test = "1"
-# Pinned below 1.2: `EpiAwarePackageTools.run_package_tests` calls TestItemRunner
-# internals, and 1.2.1 changed `run_testitem`'s signature, so every test item
-# fails with `MethodError: no method matching run_testitem(...)`. Reproduced
-# locally against 1.2.1 (34 errors) and confirmed passing on 1.1.5.
-# `test/ad/Project.toml` already pins 1.1.5, which is why the AD jobs stayed
-# green while the main Test job failed on every OS.
-TestItemRunner = "1.1"
+TestItemRunner = "1"
 TestItems = "1"

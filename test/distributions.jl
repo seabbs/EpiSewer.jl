@@ -6,6 +6,7 @@ using TestItemRunner
 # components actually built rather than a PMF this package assembled itself.
 
 @testitem "generation interval matches R's shifted discretisation" begin
+    using EpiSewer
     using Distributions
     import ComposableTuringIDModels as CT
 
@@ -45,6 +46,7 @@ using TestItemRunner
 end
 
 @testitem "shedding and incubation PMFs are the R assumptions" begin
+    using EpiSewer
     mdl = EpiSewer.model()
     # `LatentDelay` stores the PMF reversed.
     incubation = reverse(mdl.observation_model.delay)
@@ -65,6 +67,7 @@ end
 end
 
 @testitem "delay inputs take a distribution, a vector or a prior model" begin
+    using EpiSewer
     using Distributions
     import ComposableTuringIDModels as CT
 
@@ -97,6 +100,7 @@ end
 end
 
 @testitem "the incubation delay is the outermost observation wrapper" begin
+    using EpiSewer
     import ComposableTuringIDModels as CT
 
     mdl = EpiSewer.model()
@@ -122,6 +126,7 @@ end
 end
 
 @testitem "the default chain evaluates forward, incubation delay included" begin
+    using EpiSewer
     import ComposableTuringIDModels as CT
     using Random
 

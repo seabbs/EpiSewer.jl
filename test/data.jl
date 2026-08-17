@@ -2,6 +2,7 @@ using EpiSewer
 using TestItemRunner
 
 @testitem "example_data loads Zurich measurements, flows, cases" begin
+    using EpiSewer
     using DataFrames
     using Dates: Date
     d = EpiSewer.example_data()
@@ -40,6 +41,7 @@ end
 end
 
 @testitem "example data is public but not exported" begin
+    using EpiSewer
     @test Base.ispublic(EpiSewer, :example_data)
     @test !Base.isexported(EpiSewer, :example_data)
     # The hand-built PMF helper is gone: distributions go straight to the
