@@ -157,19 +157,36 @@ draw(outer(rt) + ribbon(rt);
     figure = (; size = (860, 300)))
 ```
 
-The two latent series behind a measurement: the load arriving at the sampling site each day, and the infections that shed it.
-These carry the 50% interval only, because their 95% interval spans about eighteen orders of magnitude and no axis carries that usefully.
+The two latent series behind a measurement are the load arriving at the sampling site each day and the infections that shed it.
+Both carry the 50% interval only, because their 95% interval spans about eighteen orders of magnitude and no axis carries that usefully.
+Even the 50% runs to six, so the axis is held to the median trajectory and the interval is clipped where it leaves the panel.
+What that shows is the slow upward drift the long-term Gaussian process puts in the prior.
 
 ```julia
-latent = vcat(
-    insertcols(bands(across(g -> g.expected_y_t .* flow), obs_dates),
-        :quantity => "prior expected load (gc/day)"),
-    insertcols(bands(across(g -> g.I_t), inf_dates),
-        :quantity => "prior infections"))
+# Hold the axis to the median trajectory. The interval runs wider than any
+# axis can show, so it is clipped rather than allowed to set the range.
+function median_limits(b; decades = 1.5)
+    lo, hi = extrema(b.med)
+    return (nothing, (lo / 10^decades, hi * 10^decades))
+end
 
-draw(ribbon(latent) * mapping(layout = :quantity);
-    axis = (; yscale = log10), facet = (; linkyaxes = false),
-    figure = (; size = (860, 320)))
+load = bands(across(g -> g.expected_y_t .* flow), obs_dates)
+
+draw(ribbon(load);
+    axis = (; yscale = log10, ylabel = "gc/day",
+        limits = median_limits(load),
+        title = "Prior expected load: median and 50% interval"),
+    figure = (; size = (860, 290)))
+```
+
+```julia
+infections = bands(across(g -> g.I_t), inf_dates)
+
+draw(ribbon(infections);
+    axis = (; yscale = log10, ylabel = "infections",
+        limits = median_limits(infections),
+        title = "Prior infections: median and 50% interval"),
+    figure = (; size = (860, 290)))
 ```
 
 Fit with NUTS.
