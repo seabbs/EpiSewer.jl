@@ -62,7 +62,8 @@ mdl = EpiSewer.model()
 ```
 
 That prints as a tree of named parts rather than one monolithic model, which is the point of the port.
-The parts are a `Renewal` infection process with stochastic infections and a `HilbertSpaceGP` prior on `R_t`, observed through the incubation delay, the per-case shed load, the shedding delay, division by flow, and log-normal measurement noise.
+The infection process is a `Renewal` with stochastic infections, over an `R_t` prior built from a short-term and a long-term `HilbertSpaceGP` summed under a softplus link.
+It is observed through the incubation delay, the per-case shed load, the shedding delay, division by flow, and log-normal measurement noise.
 
 Size the infection series.
 Each `LatentDelay` in the observation chain drops the partially observed head of its convolution, so the infections need the chain's lead-in on top of the observed days.
@@ -182,7 +183,7 @@ The docs build executes every ` ```julia ` fence in this README, and sampling be
 Every stage is interchangeable, so a changed modelling assumption is a changed argument rather than a new model.
 `rt` replaces the `R_t` prior, `infection_model` and `observation_model` replace a whole stage, and the delay keywords replace one distribution.
 
-The default `R_t` prior is the R package's approximate Gaussian process.
+The default `R_t` prior is the R package's pair of approximate Gaussian processes.
 A random walk instead:
 
 ```julia
