@@ -13,7 +13,8 @@ using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,
     AbstractRenewalModifier, Ascertainment, BinomialError,
     CombineLatentModels, HalfNormal, HilbertSpaceGP, IID, LatentDelay, Matern32Kernel,
-    NormalError, PriorLike, Renewal, TransformObservationModel,
+    NormalError, PriorLike, Renewal, TransformLatentModel,
+    TransformObservationModel,
     UncertainDelay, IDModel
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel,
     generate_observation_error_priors, observation_error,
@@ -37,7 +38,7 @@ include("models.jl")
 
 # Public API (not exported — call via EpiSewer.model(), etc.)
 public example_data, model, observation_lead_in
-public gp_length_scale, crude_initial_infections
+public gp_length_scale, crude_initial_infections, softplus_link
 public LogNormalError, LOD, DigitalPCRError, MeasurementOutliers, FlowNormalize
 public InfectionNoise, InfectionNoiseDraws
 

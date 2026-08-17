@@ -26,6 +26,63 @@ const _GP_LONG_LENGTH_SCALE_SD_DAYS = 7.0   # long_length_scale_prior_sigma
 const _GP_LONG_MAGNITUDE = 0.25             # long_magnitude_prior_mu
 const _GP_LONG_MAGNITUDE_SD = 0.05          # long_magnitude_prior_sigma
 
+# EpiSewer's `R_t` link: `inv_softplus` with sharpness 4, applied to the summed
+# Gaussian processes plus an intercept fixed at 1
+# (`R/model_infections.R`: `R_link = c(0, 4, 0, 0)`, `R_intercept_prior_mu = 1`
+# with `sigma = 0`; `inst/stan/functions/link.stan`: `apply_link`).
+const _R_LINK_SHARPNESS = 4.0
+const _R_INTERCEPT = 1.0
+
+@doc raw"""
+    softplus_link(z; intercept = 1.0, sharpness = 4.0)
+
+EpiSewer's `inv_softplus` link from a latent path onto ``R_t``.
+
+```math
+R_t = \frac{\log\!\left(1 + e^{k (a + z_t)}\right)}{k}
+```
+
+with ``a`` = `intercept` and ``k`` = `sharpness`. At ``z_t = 0`` this gives
+``R_t \approx 1``, and it is asymptotically **linear** in ``z_t`` rather than
+exponential.
+
+That distinction is the point of using it. `Renewal`'s default transformation is
+`exp`, and ``\mathbb{E}[e^{z}] = e^{\sigma^2/2} > 1`` for a zero-mean ``z``, so an
+`exp` link puts a systematic upward bias in ``\mathbb{E}[R_t]`` that compounds
+through the renewal recursion. At the default Gaussian-process magnitudes that
+bias is about 4% per generation, which over the example series is a factor of
+several in the expected load. A softplus link is unbiased to first order, and it
+is what R uses.
+
+Returns the value on the **log** scale, because `Renewal` applies its own `exp`
+to the latent path. Composing it as
+`TransformLatentModel(gp, softplus_link)` therefore leaves `Renewal`'s
+`transformation` free to keep seeding the initial incidence with `exp`, which is
+what R does and what a single shared `transformation` could not express.
+
+# Arguments
+- `z`: the latent path, typically the summed Gaussian processes.
+- `intercept`: the fixed intercept added before the link, R's `R_intercept`.
+- `sharpness`: the softplus sharpness, R's second `R_link` element.
+
+# Examples
+```@example softplus_link
+using EpiSewer
+exp.(EpiSewer.softplus_link([-0.5, 0.0, 0.5]))
+```
+
+Against `exp`, which amplifies the upper tail:
+
+```@example softplus_link
+exp.([-0.5, 0.0, 0.5])
+```
+"""
+function softplus_link(
+        z; intercept = _R_INTERCEPT, sharpness = _R_LINK_SHARPNESS
+    )
+    return log.(_softplus.(intercept .+ z, sharpness))
+end
+
 """
     gp_length_scale(days, n; sd = nothing)
 
@@ -171,7 +228,13 @@ function _default_rt(; n = 164, m = 20)
         ),
         m = m, c = 3.0, kernel = Matern32Kernel(),
     )
-    return CombineLatentModels([short, long], ["gp_short", "gp_long"])
+    combined = CombineLatentModels([short, long], ["gp_short", "gp_long"])
+    # R's `inv_softplus` link, on the log scale so `Renewal`'s own `exp` recovers
+    # `R_t`. Putting the link here rather than in `Renewal`'s `transformation` is
+    # deliberate: that field is applied to the initial incidence as well as to the
+    # `R_t` path, so a softplus there would also reshape the seeding prior, which
+    # R keeps on the exponential scale.
+    return TransformLatentModel(combined, softplus_link)
 end
 
 # Compose one delay onto an observation model. `LatentDelay`'s discretisation

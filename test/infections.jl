@@ -168,13 +168,16 @@ end
 
     idm = EpiSewer.model()
     inf = idm.infection_model
-    # R's `R_estimate_gp()` sums a short-term and a long-term Matern-3/2 GP.
-    @test inf.rt isa CT.CombineLatentModels
-    @test length(inf.rt.models) == 2
+    # R's `R_estimate_gp()` sums a short-term and a long-term Matern-3/2 GP,
+    # then applies its `inv_softplus` link to the sum.
+    @test inf.rt isa CT.TransformLatentModel
+    combined = inf.rt.model
+    @test combined isa CT.CombineLatentModels
+    @test length(combined.models) == 2
     # A non-empty prefix wraps each component, which is what keeps the two GPs'
     # `σ` and `ℓ` distinct in the chain.
-    @test all(m -> m isa CT.PrefixLatentModel, inf.rt.models)
-    short, long = (m.model for m in inf.rt.models)
+    @test all(m -> m isa CT.PrefixLatentModel, combined.models)
+    short, long = (m.model for m in combined.models)
     @test all(g -> g isa CT.HilbertSpaceGP, (short, long))
     @test all(g -> g.kernel isa CT.Matern32Kernel, (short, long))
     @test all(g -> g.c == 3.0, (short, long))
@@ -264,4 +267,46 @@ end
     @test isfinite(got)
     # At z = 0 the draw is the median, which for a Gamma sits below the mean.
     @test got < ι
+end
+
+@testitem "softplus_link is EpiSewer's inv_softplus link" begin
+    using EpiSewer
+
+    # R: apply_link(x, c(0, 4, ...)) = softplus(x, 4) = log1p_exp(4x)/4, applied
+    # to the summed GPs plus an intercept fixed at 1.
+    sp(x, k) = log1p(exp(k * x)) / k
+    for z in (-0.8, -0.2, 0.0, 0.3, 1.0)
+        @test exp(only(EpiSewer.softplus_link([z]))) ≈ sp(1.0 + z, 4.0)
+    end
+    # At the centre of the latent path it gives R_t just above 1, as R does.
+    @test exp(only(EpiSewer.softplus_link([0.0]))) ≈ 1.00453 atol = 1.0e-5
+    # Asymptotically linear rather than exponential, so the upper tail is far
+    # tamer than `exp`. That is what keeps E[R_t] from carrying a compounding
+    # upward bias through the renewal recursion.
+    @test exp(only(EpiSewer.softplus_link([1.0]))) < exp(1.0)
+    @test exp(only(EpiSewer.softplus_link([2.0]))) < 0.5 * exp(2.0)
+    # Returned on the log scale, because `Renewal` applies its own `exp`.
+    @test only(EpiSewer.softplus_link([0.0])) < 0.01
+end
+
+@testitem "the default R_t path applies the link without touching seeding" begin
+    using EpiSewer, Distributions, Random
+    import ComposableTuringIDModels as CT
+
+    idm = EpiSewer.model()
+    # The link sits inside the `rt` model, so `Renewal`'s own transformation is
+    # left as `exp` and keeps seeding the initial incidence on the log scale.
+    @test idm.infection_model.rt isa CT.TransformLatentModel
+    @test idm.infection_model.rt.model isa CT.CombineLatentModels
+    @test idm.infection_model.transformation === exp
+
+    # Which is what keeps the seeded infections at the scale the data implies
+    # rather than at the scale a softplus would give.
+    d = EpiSewer.example_data()
+    flow = Vector{Float64}(d.flows.flow)
+    y = d.measurements.concentration
+    n = length(y) + EpiSewer.observation_lead_in(idm)
+    mdl = CT.as_turing_model(idm, (y = y, flow = flow), n)
+    starts = [mdl(Xoshiro(s)).I_t[1] for s in 1:40]
+    @test 50.0 < median(starts) < 20000.0
 end
