@@ -1,7 +1,7 @@
 # Sampling components: integrated outlier detection (`MeasurementOutliers`).
 
 @doc raw"""
-    MeasurementOutliers{M, S, T} <: AbstractObservationModel
+    MeasurementOutliers{M, S, T, A} <: AbstractObservationModel
 
 Integrated outlier detection for a concentration time series (the
 `outliers_estimate` component in EpiSewer).
@@ -41,6 +41,12 @@ smaller than the 99% quantile.
   load-per-case prior *median* divided by the median flow rather than from the
   sampled load per case. That approximation fixes the spike's units at the
   prior median instead of tracking the posterior.
+- `spiked`: the composed `Ascertainment`, built once here rather than inside
+  `as_turing_model`. `Ascertainment`'s constructor validates `transform` with
+  `hasmethod`, which lowers to a `Core._hasmethod` foreigncall that Mooncake
+  has no rule for, so constructing it in the model body would put that call on
+  the differentiated path. Derived from the other three fields; pass them and
+  let the constructor build it.
 
 # Placement
 Put it immediately inside [`FlowNormalize`](@ref EpiSewer.FlowNormalize), so the
@@ -57,7 +63,7 @@ m = EpiSewer.MeasurementOutliers(NormalError(); scale = 100.0)
 model = as_turing_model(m, [100.0, missing, 500.0], fill(100.0, 3))
 ```
 """
-struct MeasurementOutliers{M <: AbstractObservationModel, S, T} <:
+struct MeasurementOutliers{M <: AbstractObservationModel, S, T, A} <:
     AbstractObservationModel
     "The wrapped observation model."
     model::M
@@ -65,6 +71,22 @@ struct MeasurementOutliers{M <: AbstractObservationModel, S, T} <:
     spike::S
     "Expected-series-unit equivalent of one unit of spike."
     scale::T
+    "The composed `Ascertainment` adding the spike to the expected series."
+    spiked::A
+
+    function MeasurementOutliers(
+            model::M, spike::S, scale::T
+        ) where {M <: AbstractObservationModel, S, T}
+        # An additive IID spike on the expected series. Composed here, not in
+        # `as_turing_model`, to keep `Ascertainment`'s `hasmethod` check off
+        # the differentiated path.
+        spiked = Ascertainment(
+            model, IID(spike);
+            transform = (Y_t, eps) -> Y_t .+ scale .* eps,
+            latent_prefix = "outliers",
+        )
+        return new{M, S, T, typeof(spiked)}(model, spike, scale, spiked)
+    end
 end
 
 function MeasurementOutliers(
@@ -74,13 +96,6 @@ function MeasurementOutliers(
     )
     return MeasurementOutliers(model, spike, scale)
 end
-
-# The equivalent composition: an additive IID spike on the expected series.
-_spiked(m::MeasurementOutliers) = Ascertainment(
-    m.model, IID(m.spike);
-    transform = (Y_t, eps) -> Y_t .+ m.scale .* eps,
-    latent_prefix = "outliers",
-)
 
 """
     as_turing_model(m::MeasurementOutliers, y_t, Y_t)
@@ -92,6 +107,6 @@ the wrapped model. `missing` entries are handled by the wrapped model.
 Returns `(; y_t, expected)`, where `expected` is the spiked series.
 """
 @model function as_turing_model(m::MeasurementOutliers, y_t, Y_t)
-    inner ~ as_turing_submodel(_spiked(m), y_t, Y_t)
+    inner ~ as_turing_submodel(m.spiked, y_t, Y_t)
     return (; y_t = inner.y_t, expected = inner.expected)
 end

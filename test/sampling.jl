@@ -24,7 +24,7 @@ end
     import ComposableTuringIDModels as CT
 
     m = EpiSewer.MeasurementOutliers(CT.NormalError(); scale = 10.0)
-    sp = EpiSewer._spiked(m)
+    sp = m.spiked
     @test sp isa CT.Ascertainment
     @test sp.model === m.model
     @test sp.latent_prefix == "outliers"
@@ -37,6 +37,14 @@ end
     Y = [100.0, 200.0]
     eps = [0.0, 0.5]
     @test sp.transform(Y, eps) == Y .+ 10.0 .* eps
+
+    # The composition must be a stored field, not rebuilt per log-density
+    # evaluation: `Ascertainment`'s constructor validates `transform` with
+    # `hasmethod`, and Mooncake has no rule for the `Core._hasmethod`
+    # foreigncall that lowers to.
+    @test :spiked in fieldnames(typeof(m))
+    mdl = CT.as_turing_model(m, [100.0, 200.0], Y)
+    @test mdl.args.m.spiked === sp
 end
 
 @testitem "MeasurementOutliers shifts the expected series additively" begin
