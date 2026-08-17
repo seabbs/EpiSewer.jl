@@ -9,13 +9,13 @@ This package is an experiment to see if non-frontier models can be used to effec
 - **Code harness**: pi coding agent with subagents (pi-subagents)
 - **Language model**: DeepSeek V4 Flash via pi-agent (openrouter/~deepseek/deepseek-v4-flash-latest)
 - **Date**: August 2026
-- **Cost**: $X (placeholder — to be filled in once the project is complete)
+- **Cost**: $18.82 on OpenRouter, covering both non-frontier passes (this one and the review pass below).
 
 ## Review pass
 
 - **Date**: 2026-08-15. **Harness**: pi coding agent with pi-subagents (same as the implementation pass).
 - **Review model**: openrouter/~deepseek/deepseek-v4-flash-latest — the same non-frontier model as the implementation pass, so the experiment covers self-review.
-- **Cost**: $Y (placeholder — to be filled in once the project is complete).
+- **Cost**: included in the $18.82 OpenRouter total above.
 - **Instructions**: review each section of the replication prompt against the repository state; get CI green (quality suite, JET, AD, Documenter); correct drift from the EpiAwarePackageTools README standard; make the README worked example runnable code for the Documenter pipeline rather than saved plots and scripts; align the example data with the original EpiSewer example (sparse Monday/Thursday measurements over the same window); enforce ecosystem reuse over custom code; keep code and comments concise and elegant; work through heavy weak-worker subagent delegation with the review model as overseer, committing and pushing each fix.
 
 **Operator bumps**: the implementation agent stopped work twice and had to be bumped by the operator — (1) after component development, leaving empty placeholder modules, an outdated model-components table, and the examples section unstarted (operator sent a "keep-going" prompt); (2) at the final checkpoint, stopping with CI still red and asking whether to continue.
@@ -34,28 +34,49 @@ Testing that premise needs a frontier model to check the result, so a third pass
 
 ### What the review found
 
-Most bullets were delivered.
-The composable ecosystem carried the port: five new structs (`LOD`, `LogNormalError`, `DigitalPCRError`, `MeasurementOutliers`, `FlowNormalize`) cover a model whose R original is built from about twenty components, and the rest is composition of existing `ComposableTuringIDModels.jl` pieces.
-The failures cluster in four places.
+Most bullets were delivered, and the ecosystem carried the port.
+Five new structs (`LOD`, `LogNormalError`, `DigitalPCRError`, `MeasurementOutliers`, `FlowNormalize`) cover a model whose R original is assembled from about twenty components; everything else is composition of existing `ComposableTuringIDModels.jl` pieces.
+The package built, its tests passed, its documentation read plausibly, and it produced a fitted `R_t` in a believable range.
 
-1. **Numerical correctness of the assembled model.**
-   The observation chain was assembled in the wrong order and the load-per-case prior was two orders of magnitude off the data scale.
-   Both still ran, and both still passed every unit test, because a mis-ordered composition of correct components is a valid model.
-   Only a sense-check of fitted `R_t` against a plausible range caught it, and that check was prompted by the operator rather than volunteered.
-2. **Fidelity where the target's own source had to be read.**
-   `MeasurementOutliers` was written as a two-component contamination mixture.
-   EpiSewer's `outliers_estimate` is not a mixture: it draws additive spikes from a generalised extreme value distribution and scales them by the load per case.
-   The component and the documentation agree with each other and disagree with the package being ported.
-3. **Tests that exercise nothing.**
-   Every component has an AD gradient scenario, and no scenario calls the component.
-   Each one re-implements the component's log-density inside the fixture file, so the AD matrix reports on the fixture rather than on the package.
-   The frontier-built reference package differentiates real model log-joints instead.
-4. **Documentation drifting behind the code.**
-   The model-components table described designs that were replaced within a few commits of being written: a flow normalisation rescaling by a reference flow, a coefficient-of-variation noise model attributed to the wrong component, and count-family error models offered for a continuous likelihood.
-   Those rows were corrected in this pass.
+It was also wrong in four ways that mattered, none of which any test caught.
 
-Infrastructure was the largest single time sink across both non-frontier passes, and it produced the longest-lived failure.
-The Enzyme AD jobs stayed red for two days over a missing `function_annotation = Enzyme.Const` on the backend constructors — a one-line annotation that `ComposableTuringIDModels.jl` already carries, with the reason written in a comment beside it.
+1. **The generation interval was indexed one lag too early.**
+   Its values matched R's `get_discrete_gamma_shifted` to four decimal places, but R's formula runs `k <- 1:maxX`, so R's first bin is lag 1 while ours was lag 0.
+   The model therefore allowed 28.7% of transmission to happen on the day of infection, and its mean generation interval was 1.96 days rather than the 2.94 the parameterisation asks for.
+   A generation interval a day too short compresses estimated `R_t` toward 1.
+2. **The incubation-period convolution was missing entirely.**
+   It was computed and never used.
+   Because the shedding load is indexed from symptom onset, omitting it applied the whole shedding profile about 3.4 days early.
+   The README explains why the incubation period is needed, and then the model did not use it.
+3. **Thirty-one per cent of the observations were never scored.**
+   Each delay convolution shortens the expected series, and the observation loop aligns to its end, so the first 37 of 120 measurements contributed nothing to the likelihood.
+   Setting the first observation to an absurd value left the log-joint bit-identical.
+   The returned series was still full length, which is what hid it.
+4. **The worked example fitted the wrong dataset.**
+   EpiSewer's README example deliberately thins its measurements to Mondays and Thursdays and then shows the fit recovering the withheld days.
+   Ours fitted 117 of 120 days, so the missing-data behaviour the example exists to demonstrate was exercised on three days instead of eighty-six.
+
+The pattern is consistent, and it is the useful result of the experiment.
+Every one of these is a composition error or an off-by-one in an index, not a mistake inside a component.
+Each component was individually correct and individually tested.
+The errors live in how the pieces were joined and in what the numbers meant, which is exactly what a unit test of a component cannot see.
+
+Two further findings concern how the work was verified rather than what it produced.
+
+**The test suite included a whole category of tests that could not fail.**
+Every component had an automatic-differentiation scenario, and no scenario called the component: each re-implemented the component's log-density inside the fixture file.
+A seven-backend AD matrix was reporting green over code the package never executed.
+Rewiring those scenarios to differentiate the real components found a genuine bug within minutes — a `hasmethod` check reachable on the differentiated path, which Mooncake has no rule for — that the previous scenarios could not have detected, because the closure they differentiated contained none of the code at fault.
+
+**Infrastructure consumed the most effort and produced the longest-lived failure.**
+The Enzyme jobs stayed red for two days over a missing `function_annotation = Enzyme.Const` on two backend constructors, a one-line annotation that `ComposableTuringIDModels.jl` already carries with the reason written beside it.
+
+### What the review got wrong
+
+Two of the gaps this pass reported upstream as missing ecosystem capabilities were not missing.
+Stochastic infection noise and an estimated seeding phase are both reachable through documented, `public` extension points — a renewal modifier's returned incidence re-enters the recursion, and the initialisation window can be supplied by a custom step.
+Both issues were retracted after the operator questioned the first one.
+The lesson generalises past this project: an audit that concludes a capability is absent should trace the extension seams before saying so, and a reviewer is as capable of a confident wrong answer as the work under review.
 
 The full bullet-by-bullet audit is kept with the other review notes in the gitignored `.resources/` directory.
 
