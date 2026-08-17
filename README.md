@@ -18,7 +18,7 @@ The package replicates the modelling functionality of the EpiSewer R package by 
 
 ## The model in words
 
-This section walks through the model that EpiSewer.jl replicates, in plain language. A worked Julia example will follow once the components are implemented.
+This section walks through the model that EpiSewer.jl replicates, in plain language. The worked example under "Getting started" below runs it.
 
 ### Data
 
@@ -44,14 +44,6 @@ The latent infections are mapped to an expected load by convolving the infection
 
 Combining the latent model and the observation model gives a full Bayesian generative model. Inference is performed with Hamiltonian MCMC sampling, which produces a full posterior distribution over every parameter. From that posterior we obtain R_t and the other transmission indicators — along with infections, expected load and concentration — together with credible intervals that quantify the uncertainty in every estimate.
 
-> ✅ **A working composable model has been built.** The integration test at
-> `test/integration_tests.jl` composes the EpiSewer components with core
-> `ComposableTuringIDModels` pieces — `Renewal` (with a random-walk `R_t`),
-> `Ascertainment` (per-case shed load), and `FlowNormalize` (flow-normalized
-> observations over a `NormalError`) — into a single `@model` that fits the
-> included example data. It is verified end-to-end with lightweight prior
-> (predictive) sampling so the full pipeline composes cleanly.
-
 ## Derived from EpiSewer
 
 This package is a Julia port of the [EpiSewer](https://github.com/adrian-lison/EpiSewer) R package by Adrian Lison and colleagues. The original model is described in:
@@ -73,96 +65,128 @@ The model is composed of six modular components:
 
 ## Getting started
 
-See the [documentation](https://seabbs.github.io/EpiSewer.jl/stable/) for a
-full walkthrough.
+You assemble the wastewater model from interchangeable parts, and EpiSewer.jl turns the assembly into a single Turing model you can draw from and fit.
+`EpiSewer.model` is **public but not exported**, so call it as `EpiSewer.model(...)`, never `model(...)`.
 
-The wastewater model is assembled as a composable
-`ComposableTuringIDModels.IDModel` via the public (but not exported)
-front end `EpiSewer.model(...)`. The default assembly replicates the EpiSewer
-README example — a `Renewal` infection process with a random-walk `R_t`,
-composed with the incubation delay, load-per-case scaling, the shedding delay,
-flow normalization, and observation noise — and can be evaluated on the
-example data directly:
+Load the Zurich SARS-CoV-2 example data and thin the measurements to Mondays and Thursdays.
+This is the artificially sparse series the EpiSewer README example fits.
+The withheld days are left for the model to fill in.
 
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
 using Dates: dayname
 import ComposableTuringIDModels: as_turing_model
 
-# The example concentration column is already parsed to missing for unobserved
-# days, so it loads as a Union{Missing,Float64} series.
 d = EpiSewer.example_data()
-flow = Vector{Float64}(d.flows.flow)        # daily flow (mL/day) — data
-mdl = EpiSewer.model()                      # returns an IDModel
-
-# As in the EpiSewer README example, make the measurements artificially sparse
-# (Mondays and Thursdays only) and let the model fill in the withheld days.
+flow = Vector{Float64}(d.flows.flow)      # daily flow (mL/day), data
 sparse_days = dayname.(d.measurements.date) .∈ (["Monday", "Thursday"],)
 y = ifelse.(sparse_days, d.measurements.concentration, missing)
+(days = length(y), observed = count(!ismissing, y))
+```
 
-# Each LatentDelay shortens the expected series, so the infection series needs
-# the chain's lead-in on top of the observed days — otherwise the leading
-# observations are never scored.
+Compose the model.
+The defaults are the R package's default model and the assumptions its README uses: a shifted-Gamma generation time (mean 3, sd 2.4), a `Gamma(0.929639, 7.241397)` shedding load, and a `Gamma(8.5, 0.4)` incubation period.
+
+```julia
+mdl = EpiSewer.model()
+```
+
+That prints as a tree of named parts rather than one monolithic model, which is the point of the port.
+The parts are a `Renewal` infection process with a random-walk `R_t`, observed through the incubation delay, the per-case shed load, the shedding delay, division by flow, and log-normal measurement noise.
+
+Size the infection series.
+Each `LatentDelay` in the observation chain drops the partially observed head of its convolution, so the infections need the chain's lead-in on top of the observed days.
+Passing `n = length(y)` instead would leave the leading observations unscored.
+
+```julia
 n = length(y) + EpiSewer.observation_lead_in(mdl)
+```
 
-# Flow is data: pass it through the observation-data contract at as_turing_model
-# time (y = concentrations, flow = flow_vector), not as a model() argument.
+Build the Turing model.
+The concentrations and the daily flow are both data.
+They travel together through the observation-data contract rather than as arguments to `EpiSewer.model`.
+
+```julia
 mdl_t = as_turing_model(mdl, (y = y, flow = flow), n)
-chn = sample(mdl_t, Prior(), 2)
 ```
 
-`EpiSewer.model` is **public but not exported** (call it as
-`EpiSewer.model(...)`, never `model(...)`), and its arguments are the
-composable component structs (`infection_model`, `observation_model`, and the
-`lpc_prior` parameterizing the default observation chain). The daily flow is
-observed *data* and is passed through the observation-data contract at
-`as_turing_model` time.
+Draw from the prior and inspect the generated quantities.
 
-### Worked example: fit and plots
-
-The full worked example (NUTS fit with 2 chains on 2 threads, then the
-README plots) lives in [`examples/`](https://github.com/seabbs/EpiSewer.jl/tree/main/examples):
-
-```sh
-julia --project=docs --threads=2 examples/ww_fit_example.jl   # NUTS fit + diagnostics
-julia --project=docs --threads=2 examples/ww_plots.jl         # R_t + prior-vs-posterior plots
+```julia
+prior = sample(mdl_t, Prior(), 100; progress = false)
+draw = first(vec(returned(mdl_t, prior)))
+map(x -> round.(extrema(x); sigdigits = 3),
+    (R_t = exp.(draw.Z_t), I_t = draw.I_t, concentration = draw.generated_y_t))
 ```
 
-Both scripts run in the docs environment: the package itself depends only on what
-the model needs, so the inference-output and plotting packages the scripts use
-(`MCMCChains`, `CairoMakie`, `PairPlots`) are declared in `docs/Project.toml`.
+Summarise `R_t` across the prior draws.
+`Renewal` samples a latent `Z_t` and applies its `exp` transformation, so `R_t = exp.(Z_t)`.
 
-> ⚠️ **The plots below predate the model corrections of 2026-08-17 and have not
-> been regenerated.** They were produced before the generation interval was
-> fixed (it was a day too short), before the incubation convolution was added,
-> while 44 of 120 observations were silently unscored, and from the dense series
-> rather than the sparse Monday/Thursday one this example now fits. Re-run
-> `examples/ww_fit_example.jl` and `examples/ww_plots.jl` to replace them;
-> `docs/fits/fit_diagnostics.md` records the convergence of whichever fit
-> produced the current set. Tracked in
-> [#16](https://github.com/seabbs/EpiSewer.jl/issues/16).
+```julia
+using Statistics: median
 
-The fitted effective reproduction number `R_t` (reconstructed from the
-renewal latent):
+Rt = reduce(hcat, [exp.(g.Z_t) for g in vec(returned(mdl_t, prior))])
+Rt_median = [median(view(Rt, i, :)) for i in axes(Rt, 1)]
+(median = round(median(Rt_median); digits = 2),
+    range = round.(extrema(Rt_median); digits = 2))
+```
 
-<img src="./docs/fits/ww_plot_Rt.png" width="100%" alt="R_t estimate" />
+### Fitting it
 
-Prior (grey) vs posterior (blue) densities for the key scalar parameters:
+Everything above runs in seconds, which is why it is the example.
+Posterior inference on this model does not.
+33 measurements inform 164 random-walk steps plus 87 imputed missing days.
+The sampler adapts to a step size around 0.001 and then spends most of its time in maximum-depth trees.
+Measured here, 4 chains of 400 warmup plus 400 draws did not finish inside 30 minutes.
+The fit is therefore shown rather than run, and the block below is deliberately not executed as part of this page.
 
-<img src="./docs/fits/ww_pairplot_prior_posterior.png" width="100%" alt="Prior vs posterior" />
+Two settings matter more than the iteration counts.
+Do not leave the AD backend at Turing's default.
+This is a few-hundred-parameter latent process, so reverse mode is far cheaper per gradient.
+Measured on this model, Mooncake costs 1.4 ms per gradient against ForwardDiff's 24 ms.
+Raise `target_accept` as well, because the default leaves divergent transitions behind.
 
-The observed concentrations versus the model's posterior-predictive fit
-(black: observed, blue band: 95% CI):
+```jl
+import Mooncake
 
-<img src="./docs/fits/ww_plot_concentration.png" width="100%" alt="Concentration fit" />
+chn = sample(
+    mdl_t, NUTS(0.9; adtype = Turing.AutoMooncake()),
+    MCMCThreads(), 400, 4; warmup = 400, progress = false)
 
-Posterior median and 95% CI for the expected pathogen load per day:
+Rt = reduce(hcat, [exp.(g.Z_t) for g in vec(returned(mdl_t, chn))])
+```
 
-<img src="./docs/fits/ww_plot_load.png" width="100%" alt="Expected load" />
+Budget tens of minutes.
+Check `MCMCChains.gelmandiag` and the divergence count before reading anything off the result.
+Treat `R_t` near the end of the series with care.
+As the R package's README also notes, wastewater arrives delayed, so the most recent days are informed by very little data.
 
-Posterior median and 95% CI for the estimated infections per day:
+## Swap a component
 
-<img src="./docs/fits/ww_plot_infections.png" width="100%" alt="Infections" />
+Every stage is interchangeable, so a changed modelling assumption is a changed argument rather than a new model.
+`infection_model` and `observation_model` replace a whole stage.
+The delay keywords replace one distribution.
+
+Same observation chain, a different `R_t` process.
+Here an AR(1) rather than a random walk.
+
+```julia
+using Distributions: Gamma, Normal
+
+gen = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1
+ar_mdl = EpiSewer.model(
+    infection_model = Renewal(;
+        generation_time = gen, rt = AR(), initialisation = Normal(),
+        D_gen = 15.0))
+```
+
+Adding a sewer residence time lengthens the observation chain, so read `n` back from `observation_lead_in` rather than hard-coding it.
+
+```julia
+res_mdl = EpiSewer.model(residence_dist = Gamma(2.0, 1.0), D_residence = 5.0)
+(default = EpiSewer.observation_lead_in(mdl),
+    with_residence = EpiSewer.observation_lead_in(res_mdl))
+```
 
 ## Related packages
 
