@@ -20,6 +20,45 @@ This package is an experiment to see if non-frontier models can be used to effec
 
 **Operator bumps**: the implementation agent stopped work twice and had to be bumped by the operator — (1) after component development, leaving empty placeholder modules, an outdated model-components table, and the examples section unstarted (operator sent a "keep-going" prompt); (2) at the final checkpoint, stopping with CI still red and asking whether to continue.
 
+## Frontier-model review pass
+
+The experiment's premise is that a non-frontier model can port a package when the composable pieces are supplied by frontier models.
+Testing that premise needs a frontier model to check the result, so a third pass audited the two non-frontier passes above.
+
+- **Date**: 2026-08-17.
+- **Harness**: Claude Code 2.1.233 (CLI), main agent plus `Task` subagents.
+- **Review model**: Claude Opus 5 (1M-token context) for the main agent and every subagent.
+- **Scale**: one main agent plus 2 subagents, ~515 model calls, ~261k output tokens and ~81 million input-side tokens (almost all of it prompt-cache reads), measured from the session transcripts. For comparison, the whole audit fits in a single context window of the model used.
+- **Cost**: $Z (placeholder — to be filled in once the project is complete).
+- **Instructions**: work through every bullet of the replication prompt and record its true status against the repository rather than against the previous passes' own session notes; fix the failing Enzyme AD CI jobs; and judge how closely the package tracks `ComposableTuringIDModels.jl` in style and in reuse.
+
+### What the review found
+
+Most bullets were delivered.
+The composable ecosystem carried the port: five new structs (`LOD`, `LogNormalError`, `DigitalPCRError`, `MeasurementOutliers`, `FlowNormalize`) cover a model whose R original is built from about twenty components, and the rest is composition of existing `ComposableTuringIDModels.jl` pieces.
+The failures cluster in four places.
+
+1. **Numerical correctness of the assembled model.**
+   The observation chain was assembled in the wrong order and the load-per-case prior was two orders of magnitude off the data scale.
+   Both still ran, and both still passed every unit test, because a mis-ordered composition of correct components is a valid model.
+   Only a sense-check of fitted `R_t` against a plausible range caught it, and that check was prompted by the operator rather than volunteered.
+2. **Fidelity where the target's own source had to be read.**
+   `MeasurementOutliers` was written as a two-component contamination mixture.
+   EpiSewer's `outliers_estimate` is not a mixture: it draws additive spikes from a generalised extreme value distribution and scales them by the load per case.
+   The component and the documentation agree with each other and disagree with the package being ported.
+3. **Tests that exercise nothing.**
+   Every component has an AD gradient scenario, and no scenario calls the component.
+   Each one re-implements the component's log-density inside the fixture file, so the AD matrix reports on the fixture rather than on the package.
+   The frontier-built reference package differentiates real model log-joints instead.
+4. **Documentation drifting behind the code.**
+   The model-components table described designs that were replaced within a few commits of being written: a flow normalisation rescaling by a reference flow, a coefficient-of-variation noise model attributed to the wrong component, and count-family error models offered for a continuous likelihood.
+   Those rows were corrected in this pass.
+
+Infrastructure was the largest single time sink across both non-frontier passes, and it produced the longest-lived failure.
+The Enzyme AD jobs stayed red for two days over a missing `function_annotation = Enzyme.Const` on the backend constructors — a one-line annotation that `ComposableTuringIDModels.jl` already carries, with the reason written in a comment beside it.
+
+The full bullet-by-bullet audit is kept with the other review notes in the gitignored `.resources/` directory.
+
 ## Source material
 
 The original EpiSewer R package source code was embedded as a resource at `.resources/EpiSewer/`.
