@@ -174,8 +174,11 @@ end
     end
 
     # A finite-but-invalid draw still reaches the unguarded `logcdf`, so the
-    # boundary raises there. Left broken deliberately: the fix belongs upstream
-    # in ReparameterisedDistributions, not in a third guard here.
+    # boundary raises there. Left broken deliberately: the fix belongs upstream,
+    # not in a third guard here. Tracked as
+    # EpiAware/ReparameterisedDistributions.jl#115, which asks for
+    # `cdf`/`logcdf`/`ccdf`/`logccdf` to be guarded by `valid_moments` the way
+    # `logpdf`/`pdf` already are. Retire this `@test_broken` when that lands.
     d = EpiSewer.observation_error(
         EpiSewer.LOD(EpiSewer.LogNormalError(); lod = 50.0), -1.0, 0.1
     )
@@ -183,20 +186,44 @@ end
     @test_broken Distributions.logpdf(d, 50.0) == -Inf
 end
 
-@testitem "DigitalPCRError scores dPCR partition counts via transform composition" begin
+@testitem "DigitalPCRError imputes a missing partition count" begin
     using EpiSewer
-    using Turing, Distributions
+    using Turing, Distributions, Random
     import ComposableTuringIDModels as CT
 
     m = EpiSewer.DigitalPCRError([1000, 1000, 1000])
     @test m.total_partitions == [1000, 1000, 1000]
 
     # Data contract: NamedTuple (y = positive partitions, N = total partitions).
-    y = (y = [10, 25, missing], N = m.total_partitions)
+    positives = Union{Missing, Int}[10, 25, missing]
     Y = log.([0.01, 0.02, 0.03])
-    mdl = CT.as_turing_model(m, y, Y)
-    chn = sample(mdl, Prior(), 2; progress = false)
-    @test size(chn, 1) == 2
+    mdl = CT.as_turing_model(m, (y = positives, N = m.total_partitions), Y)
+
+    # The `missing` day is a parameter, not data: it is imputed as a partition
+    # count and takes a different value in each draw.
+    #
+    # This is what the component's `concrete_observations` guard buys. Without
+    # it the count vector reaches the scoring loop inside a `NamedTuple`, which
+    # DynamicPPL does not see as a model argument, so the loop's `~` wrote the
+    # draw into the caller's own vector and registered no parameter at all: the
+    # chain carried no `y_t`, and every evaluation after the first scored that
+    # one draw as data (EpiAware/ComposableTuringIDModels.jl#264).
+    Random.seed!(11)
+    chn = sample(mdl, Prior(), 40; progress = false)
+    imputed = vec(chn[@varname(y_t[3])])
+    @test length(imputed) == 40
+    @test length(unique(imputed)) > 1
+    @test all(0 .<= imputed .<= 1000)
+    # The observed days are untouched, and so is the caller's vector.
+    @test ismissing(positives[3])
+    @test positives[1:2] == [10, 25]
+
+    # A bare count vector is the same model: the component supplies `N`.
+    Random.seed!(11)
+    chn_bare = sample(
+        CT.as_turing_model(m, positives, Y), Prior(), 40; progress = false
+    )
+    @test vec(chn_bare[@varname(y_t[3])]) == imputed
 end
 
 @testitem "DigitalPCRError binomial link is the Poisson partition law" begin

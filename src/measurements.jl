@@ -53,6 +53,11 @@ The component is a composition of ecosystem pieces:
 applies the cloglog-inverse link to the expected series and
 `BinomialError` scores the counts.
 The data contract follows `BinomialError`: `y_t = (y = positives, N = totals)`.
+`N` is supplied by the component itself, so a bare vector of positive counts is
+accepted too and the totals in a `NamedTuple` are redundant.
+
+A `missing` count is imputed: it is drawn as a `y_t` parameter rather than
+scored, and the observed counts alone form the likelihood.
 
 # Fields
 - `total_partitions::T`: valid partition count per measurement.
@@ -60,10 +65,9 @@ The data contract follows `BinomialError`: `y_t = (y = positives, N = totals)`.
 # Example
 ```julia
 dpcr = EpiSewer.DigitalPCRError([1000, 1000, 1000])
-y = (y = [10, 25, missing], N = dpcr.total_partitions)
 Y = log.([0.01, 0.02, 0.03])  # log expected copies per partition
-mdl = as_turing_model(dpcr, y, Y)
-rand(mdl)
+mdl = as_turing_model(dpcr, [10, 25, missing], Y)
+rand(mdl)                     # the missing day comes back as a drawn `y_t[3]`
 ```
 """
 struct DigitalPCRError{T <: AbstractVector{<:Integer}} <: AbstractObservationModel
@@ -75,10 +79,39 @@ _transformed_dpcr(m::DigitalPCRError) = TransformObservationModel(
     x -> 1.0 .- exp.(-exp.(x)),
 )
 
-@model function as_turing_model(m::DigitalPCRError, y_t, Y_t)
-    y = y_t isa NamedTuple ? merge(y_t, (N = m.total_partitions,)) : (y = y_t, N = m.total_partitions)
-    inner ~ as_turing_submodel(_transformed_dpcr(m), y, Y_t)
+@model function _as_turing_model_dpcr(m::DigitalPCRError, y_t, Y_t)
+    inner ~ as_turing_submodel(_transformed_dpcr(m), y_t, Y_t)
     return (; y_t = inner.y_t, expected = inner.expected)
+end
+
+# The partition totals are folded into the data here, and the result is narrowed
+# by `concrete_observations` before it reaches the submodel.
+#
+# The narrowing is what makes a `missing` count safe. `BinomialError`'s data is
+# a `NamedTuple`, and an array inside a `NamedTuple` argument is not something
+# DynamicPPL sees as a model argument: the scoring loop's `~` then writes the
+# imputed draw straight into the caller's vector and registers no `y_t`
+# parameter at all, so every evaluation after the first scores that draw as data
+# (EpiAware/ComposableTuringIDModels.jl#264). Narrowing splits the vector into a
+# `MissingObservations` carrier instead, whose scoring path copies the values and
+# assumes the absent ones. Because this component always builds the `NamedTuple`
+# itself, the hazard applies whatever the caller passes, so the guard belongs
+# here rather than on the caller.
+#
+# It sits outside the `@model` body, as `as_turing_model(::IDModel, ...)` does,
+# so it runs once per model rather than once per log-density evaluation and
+# stays off the differentiated path. Re-narrowing already-narrowed data returns
+# the same objects, so the `IDModel` path applying it first costs nothing.
+#
+# Called qualified because `concrete_observations` is documented upstream but not
+# declared public, and the quality suite rejects an explicit import of a
+# non-public name.
+function as_turing_model(m::DigitalPCRError, y_t, Y_t)
+    y = y_t isa NamedTuple ? merge(y_t, (N = m.total_partitions,)) :
+        (y = y_t, N = m.total_partitions)
+    return _as_turing_model_dpcr(
+        m, ComposableTuringIDModels.concrete_observations(y), Y_t
+    )
 end
 
 """
