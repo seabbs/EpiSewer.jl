@@ -28,9 +28,15 @@ Testing that premise needs a frontier model to check the result, so a third pass
 - **Date**: 2026-08-17.
 - **Harness**: Claude Code 2.1.233 (CLI), main agent plus `Task` subagents.
 - **Review model**: Claude Opus 5 (1M-token context) for the main agent and every subagent.
-- **Scale**: one main agent plus 2 subagents, ~515 model calls, ~261k output tokens and ~81 million input-side tokens (almost all of it prompt-cache reads), measured from the session transcripts. For comparison, the whole audit fits in a single context window of the model used.
+- **Scale**: one main agent plus 11 subagents; ~3,200 model calls, ~1.4 million output tokens and ~834 million input-side tokens (almost all of it prompt-cache reads), measured from the session transcripts.
 - **Cost**: $Z (placeholder — to be filled in once the project is complete).
 - **Instructions**: work through every bullet of the replication prompt and record its true status against the repository rather than against the previous passes' own session notes; fix the failing Enzyme AD CI jobs; and judge how closely the package tracks `ComposableTuringIDModels.jl` in style and in reuse.
+- **Output**: 24 commits, 10 issues filed on this repository and 5 upstream across three ecosystem packages.
+
+The scale ratio is the part worth recording.
+Auditing the port cost roughly two orders of magnitude more inference than producing it: the two non-frontier passes together came to $18.82, and this pass consumed ~834 million input-side tokens against their output.
+That is not a like-for-like comparison — reading a codebase to check it is inherently heavier than writing it, and prompt-cache reads are cheap per token — but it does undercut a tempting reading of the experiment.
+If a cheap model ports a package and an expensive one is needed to find out whether the port is right, the saving is smaller than the model prices suggest.
 
 ### What the review found
 
@@ -84,6 +90,28 @@ In every instance found here, the smoke was in a test whose expected value came 
 
 **Infrastructure consumed the most effort and produced the longest-lived failure.**
 The Enzyme jobs stayed red for two days over a missing `function_annotation = Enzyme.Const` on two backend constructors, a one-line annotation that `ComposableTuringIDModels.jl` already carries with the reason written beside it.
+
+### What the review had to change
+
+The audit was not read-only.
+Nine defects were fixed in the same pass, in 24 commits.
+
+| Defect | Effect before the fix |
+|---|---|
+| Generation interval indexed one lag early | mean 1.96 days instead of 2.94, and 28.7% of transmission on the day of infection |
+| Incubation convolution absent | the whole shedding profile applied ~3.4 days early |
+| Lead-in not accounted for in `n` | 44 of 120 observations never scored |
+| Worked example on the dense series | the missing-data demonstration exercised on 3 days instead of 86 |
+| `MeasurementOutliers` a contamination mixture | a different model from `outliers_estimate` |
+| Spike prior untruncated | 36.8% of prior mass on negative spikes Stan forbids |
+| `DigitalPCRError` data path | a `missing` count frozen at the first draw and scored as data |
+| `hasmethod` on the differentiated path | Mooncake reverse failed; other backends silently tolerated it |
+| Enzyme backends missing `function_annotation` | two AD jobs red for two days |
+
+Alongside those: four unused dependencies removed from the package (one of them pulling the whole Makie stack), the AD gradient tolerance tightened from the kit's default by five orders of magnitude, seven vacuous test items cleared, nine dead documentation links fixed, and five table rows corrected that described designs the code had replaced.
+
+Two things could not be fixed from here and are recorded as issues: the `Auto Version Increment` workflow needs a repository setting only a maintainer can change, and the coverage upload needs a token.
+One more is left open deliberately — the worked example's plots have not been regenerated, because the fit they came from used a 60-draw fallback on the wrong data, and replacing them with a fit nobody has verified would repeat the mistake being corrected.
 
 ### What the review got wrong
 
