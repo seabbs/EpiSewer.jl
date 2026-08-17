@@ -7,13 +7,13 @@ using TestItemRunner
 # truncation unnecessary.
 
 @testitem "InfectionNoise matches R's log-scale non-centred draw" begin
-    using EpiSewer
+    using EpiSewer, Distributions
     import ComposableTuringIDModels: apply_modifier, modifier_init_state
 
     # sigma2 = log1p(1/iota + xi^2); I = exp(log(iota) - sigma2/2 + raw*sigma)
     raw = [0.5, -1.25, 2.0]
     ξ = 0.1
-    mod = EpiSewer.InfectionNoiseDraws(raw, ξ)
+    mod = EpiSewer.InfectionNoiseDraws(raw, LogNormal, ξ, Inf, 10.0)
     ιs = (100.0, 2500.0, 7.0)
     # Thread the substate by folding, so each step reads its own `I_raw`.
     got = accumulate(
@@ -41,14 +41,51 @@ end
     end
 end
 
+@testitem "InfectionNoise caps the coefficient of variation as R does" begin
+    using EpiSewer, Distributions
+    import ComposableTuringIDModels: apply_modifier
+
+    # soft_upper(x, u, k) = u - softplus(u - x, k), with softplus = log1p_exp.
+    sp(x, k) = log1p(exp(k * x)) / k
+    su(x, u, k) = u - sp(u - x, k)
+    # Well below the cap it tracks the raw coefficient of variation closely.
+    @test su(0.01, 0.5, 10.0) ≈ 0.01 atol = 2.0e-3
+    @test su(0.1, 0.5, 10.0) ≈ 0.1 atol = 2.0e-2
+    # Far above it, it saturates at the cap.
+    @test su(50.0, 0.5, 10.0) ≈ 0.5 atol = 1.0e-6
+
+    # The capped draw is the one the modifier uses.
+    ξ, ι, raw = 0.1, 1.0e-4, 1.5
+    mod = EpiSewer.InfectionNoise(; overdispersion = ξ)
+    drawn = EpiSewer.InfectionNoiseDraws(
+        [raw], mod.dist, ξ, mod.cv_cap, mod.cv_sharpness
+    )
+    got, _ = apply_modifier(drawn, ι, 0)
+    σ² = log1p(su(sqrt(1 / ι + ξ^2), 0.5, 10.0)^2)
+    @test got ≈ exp(log(ι) - σ² / 2 + raw * sqrt(σ²))
+    # Without the cap the same tiny expectation gives a far wider draw. Compare
+    # the spread rather than one draw: capping shrinks sigma, and the -sigma^2/2
+    # median shift means a single capped draw can be the larger of the two.
+    spread(cap) = begin
+        hi, _ = apply_modifier(
+            EpiSewer.InfectionNoiseDraws([2.0], LogNormal, ξ, cap, 10.0), ι, 0
+        )
+        lo, _ = apply_modifier(
+            EpiSewer.InfectionNoiseDraws([-2.0], LogNormal, ξ, cap, 10.0), ι, 0
+        )
+        hi / lo
+    end
+    @test spread(Inf) > 1.0e4 * spread(0.5)
+end
+
 @testitem "InfectionNoise keeps infections positive" begin
-    using EpiSewer
+    using EpiSewer, Distributions
     import ComposableTuringIDModels: apply_modifier
 
     # Positive by construction, so no truncation is needed and no proposal can
     # drive the expected concentration negative. An extreme draw stays positive.
     for raw in (-50.0, -8.0, 0.0, 8.0), ι in (1.0e-3, 1.0, 1.0e4)
-        got, _ = apply_modifier(EpiSewer.InfectionNoiseDraws([raw], 0.1), ι, 0)
+        got, _ = apply_modifier(EpiSewer.InfectionNoiseDraws([raw], LogNormal, 0.1, Inf, 10.0), ι, 0)
         @test got > 0
         @test isfinite(got)
     end
@@ -162,4 +199,57 @@ end
     @test all(isfinite, drawn.I_t)
     # Seeded at the scale the measurements imply.
     @test 50.0 < drawn.I_t[1] < 20000.0
+end
+
+@testitem "InfectionNoise takes the noise family as an argument" begin
+    using EpiSewer, Distributions
+    import ComposableTuringIDModels: apply_modifier
+
+    # The machinery is generic; `dist` is what it is applied to. Both
+    # location-scale families reduce to their closed forms.
+    ξ, ι, z = 0.1, 400.0, 1.25
+    cv = 0.5 - log1p(exp(10.0 * (0.5 - sqrt(1 / ι + ξ^2)))) / 10.0
+
+    normal = EpiSewer.InfectionNoise(; dist = Normal, overdispersion = ξ)
+    dn = EpiSewer.InfectionNoiseDraws(
+        [z], normal.dist, ξ, normal.cv_cap, normal.cv_sharpness
+    )
+    got_n, _ = apply_modifier(dn, ι, 0)
+    # R's linear form: I = iota + z * cv * iota.
+    @test got_n ≈ ι + z * cv * ι
+
+    lognormal = EpiSewer.InfectionNoise(; dist = LogNormal, overdispersion = ξ)
+    dl = EpiSewer.InfectionNoiseDraws(
+        [z], lognormal.dist, ξ, lognormal.cv_cap, lognormal.cv_sharpness
+    )
+    got_l, _ = apply_modifier(dl, ι, 0)
+    σ² = log1p(cv^2)
+    @test got_l ≈ exp(log(ι) - σ² / 2 + z * sqrt(σ²))
+
+    # Both match the negative-binomial mean, and the positive family is the
+    # default because the linear one can go below zero.
+    @test EpiSewer.InfectionNoise().dist === LogNormal
+    below, _ = apply_modifier(
+        EpiSewer.InfectionNoiseDraws([-6.0], Normal, ξ, Inf, 10.0), 1.0, 0
+    )
+    @test below < 0
+    above, _ = apply_modifier(
+        EpiSewer.InfectionNoiseDraws([-6.0], LogNormal, ξ, Inf, 10.0), 1.0, 0
+    )
+    @test above > 0
+end
+
+@testitem "InfectionNoise moment-matches any reparameterised family" begin
+    using EpiSewer, Distributions
+    import ComposableTuringIDModels: apply_modifier
+
+    # A family with no closed-form transformation routes through the quantile
+    # fallback, and still lands inside the support with the right moments.
+    ξ, ι = 0.1, 500.0
+    d = EpiSewer.InfectionNoiseDraws([0.0], Gamma, ξ, 0.5, 10.0)
+    got, _ = apply_modifier(d, ι, 0)
+    @test got > 0
+    @test isfinite(got)
+    # At z = 0 the draw is the median, which for a Gamma sits below the mean.
+    @test got < ι
 end
