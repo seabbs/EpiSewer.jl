@@ -68,6 +68,20 @@ Every component had an automatic-differentiation scenario, and no scenario calle
 A seven-backend AD matrix was reporting green over code the package never executed.
 Rewiring those scenarios to differentiate the real components found a genuine bug within minutes — a `hasmethod` check reachable on the differentiated path, which Mooncake has no rule for — that the previous scenarios could not have detected, because the closure they differentiated contained none of the code at fault.
 
+The same pattern held in the unit tests, and there it was countable.
+Seven test items asserted only that the code had run: `mdl !== nothing`, or that the sampler returned the number of draws it was asked for.
+One of them was self-documenting.
+`test/sewage.jl` asserted `mdl !== nothing` with a comment saying the flow division's correctness was "covered by the integration tests", and the integration test it pointed at asserted `mdl !== nothing`.
+Two tests each deferring to the other, so flow normalisation — the package's central transformation — had no assertion anywhere in the suite.
+That is not a gap someone forgot to fill; it is a gap that documented itself as filled.
+
+Clearing all seven took the suite from 194 assertions to 192, because the replacements were more precise rather than more numerous.
+
+Two of the six test files contained no such tests at all, and the reason generalises past this project.
+`test/data.jl` and `test/distributions.jl` check specific counts, dates, types, and numbers computed from the R original — the mean generation interval against a transcription of R's own discretiser, the shedding mode, the window boundaries.
+An assertion whose expected value has to come from outside the code under test cannot be vacuous.
+In every instance found here, the smoke was in a test whose expected value came from the model itself, or from nothing at all.
+
 **Infrastructure consumed the most effort and produced the longest-lived failure.**
 The Enzyme jobs stayed red for two days over a missing `function_annotation = Enzyme.Const` on two backend constructors, a one-line annotation that `ComposableTuringIDModels.jl` already carries with the reason written beside it.
 
