@@ -35,24 +35,37 @@ mdl_t = as_turing_model(mdl, (y = y, flow = flow), n)
 chn = sample(mdl_t, Prior(), 2)
 ```
 
-## Worked example: fit and plots
+## Swapping components
 
-Fit the model to the example data with NUTS (2 chains on 2 threads) and
-reproduce the README plots:
+`EpiSewer.model` takes the delay assumptions and the two composable stages as keyword arguments, so a variant of the model is a changed argument rather than a new model.
 
-```sh
-julia --project=. --threads=2 examples/ww_fit_example.jl   # NUTS fit + diagnostics
-julia --project=docs --threads=2 examples/ww_plots.jl      # R_t + prior-vs-posterior plots
+Each delay keyword accepts a continuous `Distribution` (discretised for you), an already discretised PMF vector, or a prior model such as an `UncertainDelay` whose parameters are inferred.
+`residence_dist` defaults to `nothing`, which omits the sewer residence convolution, matching EpiSewer's default point mass at same-day arrival.
+
+```julia
+using Distributions
+
+# A non-trivial sewer residence time, truncated at 5 days.
+EpiSewer.model(residence_dist = Gamma(2.0, 1.0), D_residence = 5.0)
 ```
 
-The fitted effective reproduction number `R_t` (reconstructed from the
-renewal latent):
+Adding a delay lengthens the chain's lead-in, so read `n` back from `EpiSewer.observation_lead_in` rather than hard-coding it.
 
-<img src="../assets/ww_plot_Rt.png" width="100%" alt="R_t estimate" />
+`infection_model` and `observation_model` replace a whole stage.
 
-Prior (grey) vs posterior (blue) densities for the key scalar parameters:
+```julia
+import ComposableTuringIDModels as CT
 
-<img src="../assets/ww_pairplot_prior_posterior.png" width="100%" alt="Prior vs posterior" />
+# Direct infections instead of the default renewal process. The default
+# observation chain is still assembled.
+EpiSewer.model(
+    infection_model = CT.DirectInfections(
+        ; Z = CT.RandomWalk(), initialisation = Normal()
+    ),
+)
+```
+
+The [Model components](@ref model-components) page maps each EpiSewer component onto the ecosystem piece that provides it.
 
 ## Learning more
 
