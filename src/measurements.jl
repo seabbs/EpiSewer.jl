@@ -1,15 +1,27 @@
 # Concentration-measurement components: LOD censoring, dPCR noise, LogNormalError.
 
-"""
+@doc raw"""
     LOD{E <: AbstractObservationErrorModel, T}
 
 A limit-of-detection (LOD) censored observation model wrapping an underlying
 continuous observation-error model (e.g. `NormalError()`).
 
-Values **at or below** `lod` are left-censored: an exact value at `lod` scores
-`logcdf(dist, lod)` (the data convention: censored measurements are reported at
-the LOD, as in EpiSewer's example data), a value above `lod` scores the
-ordinary density, and a value below `lod` scores `-Inf`. `missing` entries are
+Writing ``f`` and ``F`` for the density and distribution function of the wrapped
+error model at expected value ``Y_t``, and ``L`` for the detection limit, an
+observation contributes
+
+```math
+\log p(y_t) = \begin{cases}
+  \log F(L)   & y_t = L \\
+  \log f(y_t) & y_t > L \\
+  -\infty     & y_t < L
+\end{cases}
+```
+
+A measurement at the limit therefore scores the probability of being anywhere at
+or below it, rather than a density. This is the data convention EpiSewer uses:
+non-detects are reported *at* the limit, as in its example data, so `y_t == L`
+means "somewhere below ``L``" rather than "exactly ``L``". `missing` entries are
 handled by the standard `AbstractObservationErrorModel` loop.
 
 # Fields
@@ -41,12 +53,26 @@ function observation_error(m::LOD, Y_t, priors...)
     return censored(observation_error(m.error_model, Y_t, priors...), m.lod, Inf)
 end
 
-"""
+@doc raw"""
     DigitalPCRError{T <: AbstractVector{<:Integer}}
 
-A dPCR observation-noise model (`noise_estimate_dPCR` in EpiSewer): positive
-partition counts follow `Binomial(total_t, p_t)` with `p_t = 1 - exp(-exp(Y_t))`
-(the Poisson partition law, `Y_t` the log expected copies per partition).
+A digital PCR observation model: the positive partition counts are scored
+directly, rather than the concentration derived from them.
+
+With ``Y_t`` the log expected copies per partition, the copies landing in one
+partition are Poisson with mean ``e^{Y_t}``, so a partition tests positive
+whenever it receives at least one copy:
+
+```math
+p_t = 1 - \exp(-e^{Y_t}), \qquad
+y_t \sim \mathrm{Binomial}(N_t, p_t)
+```
+
+The link ``Y_t \mapsto 1 - \exp(-e^{Y_t})`` is the inverse of the
+complementary log-log link, and it is the right one here because it *is* the
+Poisson zero-probability: ``1 - e^{-\lambda}`` is the chance of a non-empty
+partition at mean ``\lambda``. Saturation follows for free, since ``p_t \to 1``
+as the expected copies grow.
 
 The component is a composition of ecosystem pieces:
 `TransformObservationModel`
@@ -114,17 +140,33 @@ function as_turing_model(m::DigitalPCRError, y_t, Y_t)
     )
 end
 
-"""
+@doc raw"""
     LogNormalError{S <: PriorLike}
 
 A log-normal observation-error model with an inferred coefficient of variation.
 
-Relative noise is scored with a `LogNormal` whose real-space mean equals the
-expected concentration `Y_t` and whose standard deviation is `σ * Y_t`, so `σ`
-is the CV of the measurement error — matching EpiSewer's `noise_estimate`
-convention. The distribution is built with
-`reparameterise` from
-ReparameterisedDistributions.
+The measurement noise is relative: the distribution's real-space mean is the
+expected concentration and its real-space standard deviation is proportional to
+it, so ``\sigma`` is a coefficient of variation rather than an absolute scale.
+
+```math
+\mathbb{E}[y_t] = Y_t, \qquad \mathrm{sd}[y_t] = \sigma Y_t, \qquad
+y_t \sim \mathrm{LogNormal}(\mu_t, s)
+```
+
+A `LogNormal` is parameterised on the log scale, so those two moments are
+converted to its native parameters:
+
+```math
+s^2 = \log\!\left(1 + \sigma^2\right), \qquad
+\mu_t = \log Y_t - s^2 / 2
+```
+
+`reparameterise` from ReparameterisedDistributions performs that conversion, so
+the component states the moments it means and the log-scale parameters follow.
+Note ``s`` does not depend on ``Y_t``: a constant coefficient of variation is a
+constant variance on the log scale, which is what makes this the relative-noise
+family. This matches EpiSewer's `noise_estimate` convention.
 
 `cv` sets the prior for `σ` — a constant `Distribution` or a length-`n`
 process, drawn through the `as_turing_submodel` seam like `NormalError`

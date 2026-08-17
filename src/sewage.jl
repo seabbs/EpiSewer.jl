@@ -1,14 +1,29 @@
 # Sewage components: flow normalization of concentration signals (`FlowNormalize`).
 
-"""
+@doc raw"""
     FlowNormalize{E <: AbstractObservationModel}
 
-A thin flow-normalization wrapper (the `flows_observe` component in EpiSewer):
-`concentration_t = load_t / flow_t`. The division is delegated to the
-ecosystem's `TransformObservationModel`, and the **flow is data**,
-passed at `as_turing_model` time as `y_t = (y = concentrations, flow = flow)`
-— not stored on the model (the same data contract
-`BinomialError` uses for its trial counts).
+Flow normalisation (the `flows_observe` component in EpiSewer): the expected
+pathogen load arriving each day is divided by that day's wastewater flow to give
+an expected concentration.
+
+```math
+\kappa_t = \frac{\pi_t}{q_t}
+```
+
+with ``\pi_t`` the expected load in gene copies per day, ``q_t`` the flow in
+millilitres per day, and ``\kappa_t`` the expected concentration in gene copies
+per millilitre. Dividing by the measured flow removes the day-to-day dilution
+that rainfall and other flow variation introduce into the raw signal.
+
+The division is performed by `TransformObservationModel`, and the **flow is
+data**, passed at `as_turing_model` time as
+`y_t = (y = concentrations, flow = flow)` rather than stored on the model — the
+same data contract `BinomialError` uses for its trial counts.
+
+When an outer `LatentDelay` has shortened the expected series, the flow is
+aligned to its **tail**: the expected series always ends at the most recent day,
+so the last ``\mathrm{length}(\pi)`` flow values are the matching ones.
 
 Place `FlowNormalize` **inside** the chain, after the load-scaling and delay
 components and before the observation-error model, so the division is applied
