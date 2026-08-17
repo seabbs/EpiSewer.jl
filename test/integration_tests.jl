@@ -15,44 +15,14 @@ using TestItemRunner
 # `EpiSewer.model(...)` assembles this as `IDModel(infection_model,
 # observation_model)`.
 
-@testitem "EpiSewer.model builds a composable IDModel that samples on example data" begin
-    using EpiSewer
-    import ComposableTuringIDModels as CT
-    using Distributions, Turing, Random
-
-    d = EpiSewer.example_data()
-
-    # Subsample for a lightweight test (each LatentDelay truncates the expected
-    # series by its PMF length, so n must exceed their total).
-    sub = 5:64
-    n = length(sub)
-    y_obs = Vector{Union{Missing, Float64}}(d.measurements.concentration[sub])
-    flow = Vector{Float64}(d.flows.flow[sub])
-
-    Random.seed!(42)
-    mdl = EpiSewer.model()
-
-    # It is an IDModel composing a Renewal with the flow-normalized chain.
-    @test mdl isa CT.IDModel
-    @test mdl.infection_model isa CT.Renewal
-
-    # Flow is data passed through the observation-data contract.
-    mdl_t = CT.as_turing_model(mdl, (y = y_obs, flow = flow), n)
-    chn = sample(mdl_t, Prior(), 2; progress = false)
-
-    @test size(chn, 1) == 2
-    @test n == length(y_obs)
-    # The incubation (8) and shedding (38) PMFs both truncate the series.
-    @test n > 8 + 38
-end
-
-@testitem "EpiSewer.model defaults build on the full example data" begin
+@testitem "EpiSewer.model assembles the default composable chain" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
 
     mdl = EpiSewer.model()  # no flow argument: flow is data
 
     @test mdl isa CT.IDModel
+    @test mdl.infection_model isa CT.Renewal
     # The default observation chain is LatentDelay(Ascertainment(LatentDelay(
     # FlowNormalize(LogNormalError())))): the incubation delay outermost (it
     # transforms I_t first), then load-per-case scaling, the shedding delay, and
@@ -164,7 +134,7 @@ end
         logjoint_at(perturbed, length(obs), vi_short)
 end
 
-@testitem "Composable model also exercises the FlowNormalize error model in isolation" begin
+@testitem "FlowNormalize divides the expected load by the flow tail" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
 
@@ -172,58 +142,56 @@ end
     flow = Vector{Float64}(d.flows.flow[1:10])
 
     # Thin wrapper: flow is data passed through the observation-data contract.
+    # The expected series is a LOAD (gc/day) and comes out as a concentration
+    # (gc/mL). It is two days shorter than the flow here, as a `LatentDelay`
+    # above would leave it, so the flow is aligned to its own tail — the days
+    # the expected series actually covers, not the first days of the record.
     fn = EpiSewer.FlowNormalize(CT.NormalError())
-    mdl = CT.as_turing_model(fn, (y = fill(100.0, 10), flow = flow), fill(100.0, 10))
-    @test mdl !== nothing
+    load = fill(2.0e16, 8)
+    mdl = CT.as_turing_model(fn, (y = fill(100.0, 8), flow = flow), load)
+
+    expected = mdl().expected
+    @test expected ≈ load ./ flow[3:10]
+    @test !isapprox(expected, load ./ flow[1:8])
 end
 
-@testitem "Composable model also exercises full EpiSewer.model via direct evaluation" begin
-    using EpiSewer
-    import ComposableTuringIDModels as CT
-    using Distributions, Random
-
-    d = EpiSewer.example_data()
-    # example_data now returns a typed Union{Missing,Float64} concentration
-    # column, so the series is used directly (no string parsing).
-    y_obs = Vector{Union{Missing, Float64}}(d.measurements.concentration[5:64])
-    flow = Vector{Float64}(d.flows.flow[5:64])
-
-    Random.seed!(7)
-    mdl = EpiSewer.model()
-    mdl_t = CT.as_turing_model(mdl, (y = y_obs, flow = flow), length(y_obs))
-    res = mdl_t()
-
-    @test haskey(res, :generated_y_t)
-    @test haskey(res, :expected_y_t)
-    @test haskey(res, :I_t)
-    @test haskey(res, :Z_t)
-end
-
-@testitem "EpiSewer.model is public but not exported and returns an IDModel" begin
+@testitem "EpiSewer.model is public, and prior-samples the sparse example data" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
     using Distributions, Turing, Random
 
-    # (a) accessible as EpiSewer.model (public but not exported)
+    DPPL = Turing.DynamicPPL
+
+    # Accessible as EpiSewer.model (public but not exported).
     @test Base.ispublic(EpiSewer, :model)
     @test !Base.isexported(EpiSewer, :model)
-    # (c) returns an IDModel
+
     d = EpiSewer.example_data()
     mdl = EpiSewer.model()
-    @test mdl isa CT.IDModel
-    @test mdl.infection_model isa CT.Renewal
-
-    # (d) samples via Prior on a subsample of example data
     sub = 5:64
-    n = length(sub)
     y_obs = Vector{Union{Missing, Float64}}(d.measurements.concentration[sub])
     flow = Vector{Float64}(d.flows.flow[sub])
-    Random.seed!(42)
-    chn = sample(
-        CT.as_turing_model(EpiSewer.model(), (y = y_obs, flow = flow), n),
-        Prior(), 2; progress = false
+    n = length(y_obs) + EpiSewer.observation_lead_in(mdl)
+    mdl_t = CT.as_turing_model(mdl, (y = y_obs, flow = flow), n)
+
+    # The window holds one unmeasured day, and it is imputed: the concentration
+    # column is `Union{Missing, Float64}`, which the `IDModel` narrows into the
+    # carrier whose scoring path assumes the absent entries. One `y_t` variable,
+    # for that day only. With `n = length(y_obs)` the day falls in the unscored
+    # lead-in and there is no `y_t` variable at all.
+    y_vars = filter(
+        k -> startswith(string(k), "y_t"),
+        collect(keys(DPPL.VarInfo(Random.Xoshiro(1), mdl_t)))
     )
-    @test size(chn, 1) == 2
+    @test count(ismissing, y_obs) == 1
+    @test length(y_vars) == 1
+
+    # Every prior draw scores the real series to a finite log-joint. A misaligned
+    # delay or flow division shows up here as a `-Inf`, since `LogNormalError`
+    # rejects a non-positive or non-finite expected concentration.
+    Random.seed!(42)
+    chn = sample(mdl_t, Prior(), 2; progress = false)
+    @test all(isfinite, vec(chn[:logjoint]))
 end
 
 @testitem "EpiSewer.model accepts explicit composable components" begin
@@ -360,17 +328,14 @@ end
     )
 
     # The data carries positive counts only, with one day `missing`: the
-    # component supplies `N` from its own `total_partitions`.
-    #
-    # `concrete_observations` splits the partly-missing vector into the carrier
-    # that `as_turing_model(::IDModel, ...)` would build for it automatically.
-    # A bare observation model does not, and DynamicPPL then imputes by writing
-    # the draw into the passed vector, so the second evaluation would score the
-    # imputed count as data.
+    # component supplies `N` from its own `total_partitions`, and narrows the
+    # data on the way in so the `missing` day is imputed. Data that reaches an
+    # error model inside a `NamedTuple` is never a model argument DynamicPPL
+    # sees, so without that narrowing the scoring loop's `~` writes its draw into
+    # the caller's vector and registers no variable at all.
     positives = Union{Missing, Int}[18, 25, missing, 11, 30, 22]
     observed = [1, 2, 4, 5, 6]
-    data = CT.concrete_observations(positives)
-    mdl = CT.as_turing_model(component, data, base)
+    mdl = CT.as_turing_model(component, positives, base)
 
     vi = DPPL.VarInfo(Random.Xoshiro(3), mdl)
     draw = DPPL.get_values(vi)
@@ -394,7 +359,7 @@ end
 
     # Supplying the totals through the data is the same model, since the
     # component's `total_partitions` is what reaches `BinomialError` either way.
-    mdl_nt = CT.as_turing_model(component, (y = data, N = totals), base)
+    mdl_nt = CT.as_turing_model(component, (y = positives, N = totals), base)
     @test DPPL.loglikelihood(mdl_nt, vi) == DPPL.loglikelihood(mdl, vi)
 end
 
