@@ -9,13 +9,13 @@ This package is an experiment to see if non-frontier models can be used to effec
 - **Code harness**: pi coding agent with subagents (pi-subagents)
 - **Language model**: DeepSeek V4 Flash via pi-agent (openrouter/~deepseek/deepseek-v4-flash-latest)
 - **Date**: August 2026
-- **Cost**: $13.62 on OpenRouter, part of an $18.82 total across both non-frontier passes.
+- **Cost**: \$13.62 on OpenRouter, part of an \$18.82 total across both non-frontier passes.
 
 ## Review pass
 
 - **Date**: 2026-08-15. **Harness**: pi coding agent with pi-subagents (same as the implementation pass).
 - **Review model**: Kimi 3 as the overseer, delegating to DeepSeek V4 Flash subagents (openrouter/~deepseek/deepseek-v4-flash-latest) as the weak workers. Both non-frontier, so the experiment covers non-frontier review of non-frontier work.
-- **Cost**: $5.20 on OpenRouter, the remainder of the $18.82 total.
+- **Cost**: \$5.20 on OpenRouter, the remainder of the \$18.82 total.
 - **Instructions**: review each section of the replication prompt against the repository state; get CI green (quality suite, JET, AD, Documenter); correct drift from the EpiAwarePackageTools README standard; make the README worked example runnable code for the Documenter pipeline rather than saved plots and scripts; align the example data with the original EpiSewer example (sparse Monday/Thursday measurements over the same window); enforce ecosystem reuse over custom code; keep code and comments concise and elegant; work through heavy weak-worker subagent delegation with the review model as overseer, committing and pushing each fix.
 
 **Operator bumps**: the implementation agent stopped work twice and had to be bumped by the operator — (1) after component development, leaving empty placeholder modules, an outdated model-components table, and the examples section unstarted (operator sent a "keep-going" prompt); (2) at the final checkpoint, stopping with CI still red and asking whether to continue.
@@ -29,12 +29,12 @@ Testing that premise needs a frontier model to check the result, so a third pass
 - **Harness**: Claude Code 2.1.233 (CLI), main agent plus `Task` subagents.
 - **Review model**: Claude Opus 5 (1M-token context) for the main agent and every subagent.
 - **Scale**: one main agent plus 11 subagents; ~3,200 model calls, ~1.4 million output tokens and ~834 million input-side tokens (almost all of it prompt-cache reads), measured from the session transcripts.
-- **Cost**: $Z (placeholder — to be filled in once the project is complete).
+- **Cost**: \$Z (placeholder — to be filled in once the project is complete).
 - **Instructions**: work through every bullet of the replication prompt and record its true status against the repository rather than against the previous passes' own session notes; fix the failing Enzyme AD CI jobs; and judge how closely the package tracks `ComposableTuringIDModels.jl` in style and in reuse.
 - **Output**: 24 commits, 10 issues filed on this repository and 5 upstream across three ecosystem packages.
 
 The scale ratio is the part worth recording.
-Auditing the port cost roughly two orders of magnitude more inference than producing it: the two non-frontier passes together came to $18.82, and this pass consumed ~834 million input-side tokens against their output.
+Auditing the port cost roughly two orders of magnitude more inference than producing it: the two non-frontier passes together came to \$18.82, and this pass consumed ~834 million input-side tokens against their output.
 That is not a like-for-like comparison — reading a codebase to check it is inherently heavier than writing it, and prompt-cache reads are cheap per token — but it does undercut a tempting reading of the experiment.
 If a cheap model ports a package and an expensive one is needed to find out whether the port is right, the saving is smaller than the model prices suggest.
 
