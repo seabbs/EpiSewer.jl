@@ -9,13 +9,13 @@ This package is an experiment to see if non-frontier models can be used to effec
 - **Code harness**: pi coding agent with subagents (pi-subagents)
 - **Language model**: DeepSeek V4 Flash via pi-agent (openrouter/~deepseek/deepseek-v4-flash-latest)
 - **Date**: August 2026
-- **Cost**: $18.82 on OpenRouter, covering both non-frontier passes (this one and the review pass below).
+- **Cost**: $13.62 on OpenRouter, part of an $18.82 total across both non-frontier passes.
 
 ## Review pass
 
 - **Date**: 2026-08-15. **Harness**: pi coding agent with pi-subagents (same as the implementation pass).
-- **Review model**: openrouter/~deepseek/deepseek-v4-flash-latest — the same non-frontier model as the implementation pass, so the experiment covers self-review.
-- **Cost**: included in the $18.82 OpenRouter total above.
+- **Review model**: Kimi 3 as the overseer, delegating to DeepSeek V4 Flash subagents (openrouter/~deepseek/deepseek-v4-flash-latest) as the weak workers. Both non-frontier, so the experiment covers non-frontier review of non-frontier work.
+- **Cost**: $5.20 on OpenRouter, the remainder of the $18.82 total.
 - **Instructions**: review each section of the replication prompt against the repository state; get CI green (quality suite, JET, AD, Documenter); correct drift from the EpiAwarePackageTools README standard; make the README worked example runnable code for the Documenter pipeline rather than saved plots and scripts; align the example data with the original EpiSewer example (sparse Monday/Thursday measurements over the same window); enforce ecosystem reuse over custom code; keep code and comments concise and elegant; work through heavy weak-worker subagent delegation with the review model as overseer, committing and pushing each fix.
 
 **Operator bumps**: the implementation agent stopped work twice and had to be bumped by the operator — (1) after component development, leaving empty placeholder modules, an outdated model-components table, and the examples section unstarted (operator sent a "keep-going" prompt); (2) at the final checkpoint, stopping with CI still red and asking whether to continue.
