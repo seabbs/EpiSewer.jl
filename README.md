@@ -26,7 +26,7 @@ Posterior fitting is not yet demonstrated on the thinned example data. The "Fitt
 
 This describes the model the EpiSewer R package implements.
 EpiSewer.jl replicates part of it.
-The [Model components](https://epiaware.org/EpiSewer.jl/stable/components/model-components) page maps each piece onto the ecosystem component that provides it, and its "What the default chain leaves out" section records what the default Julia chain does not yet cover.
+The [Model components](https://epiaware.org/EpiSewer.jl/stable/components/model-components) page maps each piece onto the ecosystem component that provides it, and sets out which parts the default Julia chain composes and which sit outside it.
 
 **Data.** The model is driven by a time series of wastewater concentration measurements, ideally in gene copies per millilitre. Not every day needs a measurement: the model accounts for missing or non-daily observations. Alongside the measurements, daily wastewater flow records normalise the concentration signal for day-to-day variation in flow, for example due to rainfall. Confirmed case counts from the catchment area are optional, and calibrate the model so that the estimated number of infections roughly matches observed cases.
 
@@ -269,7 +269,7 @@ res_mdl = EpiSewer.model(residence_dist = Gamma(2.0, 1.0), D_residence = 5.0)
 
 Full documentation is hosted at [epiaware.org/EpiSewer.jl](https://epiaware.org/EpiSewer.jl/stable/), where the home page is this README with its example executed and its figures rendered.
 
-- **Model components** maps each component of the R model onto the ecosystem piece that provides it, and records what the default chain leaves out.
+- **Model components** maps each component of the R model onto the ecosystem piece that provides it, and marks the boundary of the default chain.
 - **Public API** documents the exported and public interface.
 - **LLM-assisted development process** records how this port was produced and reviewed.
 
