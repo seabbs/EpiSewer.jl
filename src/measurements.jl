@@ -168,9 +168,11 @@ Note ``s`` does not depend on ``Y_t``: a constant coefficient of variation is a
 constant variance on the log scale, which is what makes this the relative-noise
 family. This matches EpiSewer's `noise_estimate` convention.
 
-`cv` sets the prior for `σ` — a constant `Distribution` or a length-`n`
+`cv` sets the prior for ``\sigma`` — a constant `Distribution` or a length-`n`
 process, drawn through the `as_turing_submodel` seam like `NormalError`
-treats its `std` prior.
+treats its `std` prior. It is sampled under the name `cv`, which keeps it clear
+of the bare `σ` that the Gaussian-process latent models use for their marginal
+standard deviation.
 
 # Fields
 - `cv::S`: prior for the coefficient of variation `σ`.
@@ -193,8 +195,13 @@ LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
 @model function generate_observation_error_priors(
         obs_model::LogNormalError, y_t, Y_t
     )
-    σ ~ as_turing_submodel(obs_model.cv, length(Y_t); prefix = true)
-    return (; σ = σ)
+    # Sampled as `cv`, not `σ`: the Gaussian-process latent models sample a bare
+    # `σ` for their marginal standard deviation, and a second `σ` in the same
+    # chain silently overwrites the first (upstream ComposableTuringIDModels
+    # issue #268). `cv` is also the more accurate name for a coefficient of
+    # variation.
+    cv ~ as_turing_submodel(obs_model.cv, length(Y_t); prefix = true)
+    return (; cv = cv)
 end
 
 function observation_error(::LogNormalError, Y_t, σ)

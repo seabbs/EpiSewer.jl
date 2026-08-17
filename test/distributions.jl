@@ -90,9 +90,15 @@ end
         Gamma, [truncated(Normal(2.0, 0.5), 0, Inf), truncated(Normal(1.0, 0.5), 0, Inf)];
         D = 6.0
     )
+    # An inferred generation interval builds its renewal step per draw, and a
+    # renewal modifier has to be composed onto an already discretised interval,
+    # so the two cannot be combined (ComposableTuringIDModels issue #269). The
+    # combination is rejected rather than silently dropping the noise.
+    @test_throws ArgumentError EpiSewer.model(generation_time = uncertain)
+
     from_prior = EpiSewer.model(
         shedding_dist = uncertain, incubation_dist = uncertain,
-        generation_time = uncertain,
+        generation_time = uncertain, infection_noise = nothing,
     )
     @test from_prior.observation_model.delay === uncertain
     @test from_prior.observation_model.model.model.delay === uncertain

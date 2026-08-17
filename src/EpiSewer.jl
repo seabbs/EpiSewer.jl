@@ -11,11 +11,13 @@ using Distributions: censored, ContinuousDistribution, Gamma,
 using Dates: Date
 using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,
-    Ascertainment, BinomialError, HalfNormal, IID, LatentDelay,
+    AbstractRenewalModifier, Ascertainment, BinomialError, FixedIntercept,
+    HalfNormal, HilbertSpaceGP, IID, LatentDelay, Matern32Kernel,
     NormalError, PriorLike, Renewal, RandomWalk, TransformObservationModel,
     UncertainDelay, IDModel
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel,
-    generate_observation_error_priors, observation_error
+    generate_observation_error_priors, observation_error,
+    modifier_init_state, apply_modifier
 using EpiAwareADTools: EpiAwareADTools
 using ReparameterisedDistributions: reparameterise
 using CSV: CSV
@@ -25,6 +27,7 @@ using DataFrames: DataFrames, DataFrame
 include("data.jl")
 
 # --- Model components ---
+include("infections.jl")
 include("measurements.jl")
 include("sampling.jl")
 include("sewage.jl")
@@ -34,6 +37,8 @@ include("models.jl")
 
 # Public API (not exported — call via EpiSewer.model(), etc.)
 public example_data, model, observation_lead_in
+public gp_length_scale, crude_initial_infections
 public LogNormalError, LOD, DigitalPCRError, MeasurementOutliers, FlowNormalize
+public InfectionNoise, InfectionNoiseDraws
 
 end

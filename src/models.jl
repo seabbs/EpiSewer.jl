@@ -13,6 +13,119 @@ const _GENERATION_TIME = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1
 const _SHEDDING_DIST = Gamma(0.929639, 7.241397)
 const _INCUBATION_DIST = Gamma(8.5, 0.4)
 
+# EpiSewer's `R_estimate_gp()` prior on the length scale, in days
+# (`.resources/EpiSewer/R/model_infections.R`: `length_scale_prior_mu = 7*3`,
+# `length_scale_prior_sigma = 7/2`).
+const _GP_LENGTH_SCALE_DAYS = 21.0
+const _GP_LENGTH_SCALE_SD_DAYS = 3.5
+
+"""
+    gp_length_scale(days, n; sd = nothing)
+
+Convert a length scale in **days** to the units `HilbertSpaceGP` measures it in.
+
+`HilbertSpaceGP` standardises the time index to zero mean and unit standard
+deviation, so its length scale is in standard deviations of the index rather
+than in days. A prior taken from the literature in days therefore has to be
+divided by `std(1:n)` for a series of length `n`. Returns the scaled value, or a
+truncated `Normal` prior when `sd` is given.
+
+This is the conversion the package default uses to carry EpiSewer's
+`length_scale_prior_mu = 21` days onto the standardised index.
+
+# Examples
+```jldoctest
+julia> round(EpiSewer.gp_length_scale(21.0, 164); digits = 3)
+0.442
+```
+"""
+function gp_length_scale(days, n; sd = nothing)
+    # Sample standard deviation of the integers `1:n`, in closed form:
+    # `var(1:n) = n (n + 1) / 12`.
+    s = sqrt(n * (n + 1) / 12)
+    isnothing(sd) && return days / s
+    return truncated(Normal(days / s, sd / s), 0.05, Inf)
+end
+
+# EpiSewer's seeding prior spread: `set_prior_normal_log(unit_factor = 10)` gives
+# `sigma = log(10) / 2`, i.e. a factor of ten either side of the median at about
+# two standard deviations (`.resources/EpiSewer/R/utils_modeldata.R`).
+const _SEEDING_SPREAD = log(10) / 2
+
+# The crude initial-infection estimate for the example series, from
+# `crude_initial_infections` on the shipped data at the default load per case.
+# Held as a constant so assembling a model reads no data.
+const _INITIAL_INFECTIONS = 703.86
+
+"""
+    crude_initial_infections(concentration, flow, load_per_case; days = 7)
+
+Crude estimate of the infections seeding a series, for the seeding prior.
+
+Converts the mean measured concentration over the first `days` days into a case
+count by scaling with the mean flow and dividing by the load shed per case,
+
+```math
+\\hat{I}_0 = 0.1 + \\frac{\\overline{c}\\; \\overline{q}}{\\text{load per case}}
+```
+
+with the small offset keeping the estimate positive when no pathogen was
+measured. `missing` concentrations are skipped.
+
+This is EpiSewer's `initial_cases_crude` (`R/sewer_modeldata.R`), which is what
+its `seeding_estimate_rw()` centres the seeding prior on when no explicit
+quantiles are given. Getting this scale right matters: the renewal process has
+to reconcile the seeded infections with the measured concentrations, and a
+seeding prior orders of magnitude away from the data can only be reconciled by a
+sustained excursion in `R_t`.
+
+Pair it with [`gp_length_scale`](@ref EpiSewer.gp_length_scale) to retune the
+default model for a different series.
+
+# Examples
+```jldoctest
+julia> d = EpiSewer.example_data();
+
+julia> flow = Vector{Float64}(d.flows.flow);
+
+julia> round(EpiSewer.crude_initial_infections(
+           d.measurements.concentration, flow, 2.0e11); digits = 1)
+703.9
+```
+"""
+function crude_initial_infections(concentration, flow, load_per_case; days = 7)
+    head = concentration[1:min(days, length(concentration))]
+    observed = collect(skipmissing(head))
+    isempty(observed) && throw(
+        ArgumentError("no measured concentration in the first $days days")
+    )
+    c = sum(observed) / length(observed)
+    q = flow[1:min(days, length(flow))]
+    return 0.1 + c * (sum(q) / length(q)) / load_per_case
+end
+
+# EpiSewer's default `R_t` prior: a Hilbert-space approximate Gaussian process
+# (`R_estimate_gp()`, R's `model_infections()` default). The scale-free settings
+# transfer exactly — the Matérn 3/2 kernel (`matern_nu = c(3/2, ...)`), the
+# boundary factor (`boundary_factor = 3`) and the magnitude prior
+# (`magnitude_prior_mu = 0.125`, `magnitude_prior_sigma = 0.025`), which is in
+# log-`R_t` units either way.
+#
+# The length scale does not: R states it in days, and `HilbertSpaceGP`
+# standardises the index, so it depends on the series length. `n` is not known
+# when the model is assembled, so the default is R's 21 ± 3.5 days converted at
+# the length of the example series. `gp_length_scale` does the conversion for a
+# materially different series length.
+function _default_rt(; n = 164)
+    return HilbertSpaceGP(
+        length_scale = gp_length_scale(
+            _GP_LENGTH_SCALE_DAYS, n; sd = _GP_LENGTH_SCALE_SD_DAYS
+        ),
+        marginal_std = truncated(Normal(0.125, 0.025), 0.0, Inf),
+        m = 20, c = 3.0, kernel = Matern32Kernel(),
+    )
+end
+
 # Compose one delay onto an observation model. `LatentDelay`'s discretisation
 # keywords exist only on its continuous-distribution constructor — a PMF vector
 # is used as given, and an `UncertainDelay` (or any other prior model) carries
@@ -21,6 +134,32 @@ const _INCUBATION_DIST = Gamma(8.5, 0.4)
 # sewer residence time: EpiSewer's `residence_dist = c(1)`
 # (`.resources/EpiSewer/R/EpiSewer.R`) is a point mass at same-day arrival, i.e.
 # an identity convolution.
+# Assemble the infection process: a `Renewal` with `rt` as its `R_t` prior, and
+# the stochastic-infection modifier composed onto its step.
+#
+# `Renewal` discretises a continuous generation time in its keyword constructor
+# and takes modifiers only in its positional one, which needs an already
+# discretised interval. Building the deterministic model first and re-assembling
+# it from its own `gen_int` keeps one discretisation path rather than
+# discretising again here (ComposableTuringIDModels issue #269).
+function _infection_model(generation_time, rt, noise, initialisation; D_gen, Δd)
+    base = Renewal(;
+        generation_time = generation_time, rt = rt,
+        initialisation = initialisation, D_gen = D_gen, Δd = Δd
+    )
+    isnothing(noise) && return base
+    base.gen_int isa AbstractVector{<:Real} || throw(
+        ArgumentError(
+            "an inferred generation time cannot carry an infection-noise " *
+                "modifier: pass `infection_noise = nothing`, or give " *
+                "`infection_model` directly"
+        )
+    )
+    return Renewal(
+        base.gen_int, noise; rt = rt, initialisation = initialisation
+    )
+end
+
 _delay(model, ::Nothing; D = nothing, Δd = 1.0) = model
 
 function _delay(model, dist::ContinuousDistribution; D, Δd = 1.0)
@@ -132,18 +271,22 @@ end
     model(; generation_time, shedding_dist, incubation_dist,
         residence_dist = nothing, D_gen = 15.0, D_shedding = 38.0,
         D_incubation = 8.0, D_residence = nothing, Δd = 1.0,
-        lpc_prior = Normal(log(2e11), 0.5),
-        infection_model, observation_model) -> IDModel
+        lpc_prior = Normal(log(2e11), 0.5), n_gp = 164, rt,
+        infection_noise = InfectionNoise(), initial_infections = 703.86,
+        seeding, infection_model, observation_model) -> IDModel
 
 Assemble the wastewater model as a `ComposableTuringIDModels.IDModel`
 (EpiSewer's README example). **Public but not exported** — call as
-`EpiSewer.model(...)`. `infection_model` and `observation_model` are the
-composable swap points; the defaults are a `Renewal` with random-walk `R_t` and
-the incubation delay → per-case load → shedding delay → flow division →
-log-normal noise chain, with the incubation delay outermost so it acts on `I_t`
-first (the shedding profile is indexed from symptom onset). The observed series
-and the daily flow are both data, passed at `as_turing_model` time as
-`y_t = (y = concentrations, flow = flow)`.
+`EpiSewer.model(...)`.
+
+The defaults are EpiSewer's default model: a `Renewal` whose `R_t` follows a
+Hilbert-space approximate Gaussian process, with stochastic infections and a
+data-scaled seeding prior, observed through the incubation delay → per-case load
+→ shedding delay → flow division → log-normal noise chain. The incubation delay
+is outermost so it acts on `I_t` first, because the shedding profile is indexed
+from symptom onset. `infection_model` and `observation_model` are the composable
+swap points. The observed series and the daily flow are both data, passed at
+`as_turing_model` time as `y_t = (y = concentrations, flow = flow)`.
 
 # Arguments
 - `generation_time`, `shedding_dist`, `incubation_dist`, `residence_dist`: the
@@ -165,8 +308,31 @@ and the daily flow are both data, passed at `as_turing_model` time as
   They match R's `maxX` values and are ignored for a PMF vector or a prior model
   (which carries its own horizon).
 - `lpc_prior`: log-scale prior on the load shed per case (gc/case).
+- `rt`: the `R_t` prior. Defaults to EpiSewer's `R_estimate_gp()`: a
+  `HilbertSpaceGP` with a Matérn 3/2 kernel, boundary factor 3, and a
+  `Normal(0.125, 0.025)` magnitude prior, all of which carry over directly. Its
+  length scale does not, because R states it in days while `HilbertSpaceGP`
+  measures it in standard deviations of the time index. `n_gp` sets the series
+  length that conversion assumes, so the default is R's 21 ± 3.5 days at the
+  length of the example series; see
+  [`gp_length_scale`](@ref EpiSewer.gp_length_scale) for another series.
+- `infection_noise`: the stochastic-infection modifier
+  ([`InfectionNoise`](@ref EpiSewer.InfectionNoise)), EpiSewer's
+  `infection_noise_estimate()`. Pass `nothing` for a deterministic renewal
+  process.
+- `initial_infections`, `seeding`: the seeding prior, EpiSewer's
+  `seeding_estimate_rw()` intercept. `seeding` is a prior on **log** initial
+  infections, defaulting to a `Normal` centred on `log(initial_infections)` with
+  R's factor-of-ten spread. The default `initial_infections` is the crude
+  estimate for the example series; compute it for another series with
+  [`crude_initial_infections`](@ref EpiSewer.crude_initial_infections). This
+  scale is load bearing rather than cosmetic: the renewal process has to
+  reconcile the seeded infections with the measured concentrations, so a seeding
+  prior orders of magnitude from the data forces a sustained `R_t` excursion to
+  compensate.
 - `infection_model`, `observation_model`: the `ComposableTuringIDModels`
-  components to compose; override either to swap that stage.
+  components to compose; override either to swap that stage. Giving
+  `infection_model` directly supersedes `rt`, `infection_noise` and `seeding`.
 
 # Example
 ```@example model
@@ -194,10 +360,14 @@ function model(;
         D_residence = nothing,
         Δd = 1.0,
         lpc_prior = Normal(log(2.0e11), 0.5),
-        infection_model = Renewal(
-            ;
-            generation_time = generation_time, rt = RandomWalk(),
-            initialisation = Normal(), D_gen = D_gen, Δd = Δd,
+        n_gp = 164,
+        rt = _default_rt(; n = n_gp),
+        infection_noise = InfectionNoise(),
+        initial_infections = _INITIAL_INFECTIONS,
+        seeding = Normal(log(initial_infections), _SEEDING_SPREAD),
+        infection_model = _infection_model(
+            generation_time, rt, infection_noise, seeding;
+            D_gen = D_gen, Δd = Δd
         ),
         observation_model = _observation_model(
             lpc_prior;
