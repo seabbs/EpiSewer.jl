@@ -18,51 +18,15 @@ end
     @test m.lod == 0.0
 end
 
-@testitem "LOD model constructs for censored and missing data" begin
-    using EpiSewer
-
-    CT = EpiSewer.ComposableTuringIDModels
-    # Censored (reported at LOD), exact (above), and missing entries all construct.
-    mdl = CT.as_turing_model(
-        EpiSewer.LOD(CT.NormalError(); lod = 50.0),
-        [50.0, missing, 120.0, 50.0, 60.0],
-        fill(100.0, 5),
-    )
-    @test mdl !== nothing
-end
-
-@testitem "LOD scores censored and exact observations correctly" begin
-    using EpiSewer
-    using Distributions: Normal
-    using Turing
-
-    CT = EpiSewer.ComposableTuringIDModels
-    NE = CT.NormalError()  # default: σ ~ HalfNormal
-    lod = 50.0
-
-    # A censored measurement is reported AT the LOD and contributes
-    # logcdf(Normal(100, σ), 50), not a density at an observed value.
-    mdl_cen = CT.as_turing_model(
-        EpiSewer.LOD(NE, lod), [50.0], [100.0]
-    )
-    chn_cen = sample(mdl_cen, Prior(), 1; progress = false)
-
-    # A value above LOD is exact and scores the ordinary density.
-    mdl_exact = CT.as_turing_model(
-        EpiSewer.LOD(NE, lod), [150.0], [100.0]
-    )
-    chn_exact = sample(mdl_exact, Prior(), 1; progress = false)
-
-    # Both produce valid chains.
-    @test size(chn_cen, 1) == 1
-    @test size(chn_exact, 1) == 1
-end
-
 @testitem "LOD censored loglik matches logcdf of the underlying error distribution" begin
     using EpiSewer
     using Distributions: Distributions, Normal, logcdf
     using ForwardDiff
 
+    # The two claims about a censored measurement — that it is reported AT the
+    # limit, and that it then scores `logcdf` rather than a density — are pinned
+    # here at the distribution and in `integration_tests.jl` at the model, by
+    # "LOD composed in an IDModel left-censors at the limit".
     CT = EpiSewer.ComposableTuringIDModels
     # A fixed observation-noise sigma (degenerate Normal prior) so the censored
     # likelihood is exactly logcdf(Normal(100, 1), 50).

@@ -97,6 +97,9 @@ end
     @test "outliers.ϵ_t" in vns
     @test "y_t[2]" in vns
 
-    chn = sample(mdl, Prior(), 2; progress = false)
-    @test size(chn, 1) == 2
+    # Imputed, not held fixed: the entry is redrawn in every prior draw.
+    chn = sample(mdl, Prior(), 4; progress = false)
+    imputed = vec(chn[@varname(y_t[2])])
+    @test allunique(imputed)
+    @test all(isfinite, imputed)
 end
