@@ -1,143 +1,97 @@
 # Sampling components: integrated outlier detection (`MeasurementOutliers`).
 
 @doc raw"""
-    MeasurementOutliers{M <: AbstractObservationErrorModel, C, S} <: AbstractObservationModel
+    MeasurementOutliers{M, S, T} <: AbstractObservationModel
 
 Integrated outlier detection for a concentration time series (the
 `outliers_estimate` component in EpiSewer).
 
-Each observation is modelled as a two-component mixture
-`y_t ~ (1 - ε_t)·main(Y_t) + ε_t·outlier(Y_t)`: the *main* component is the
-wrapped error model's distribution about the expected value, and the *outlier*
-component is a wide, heavy-tailed distribution that downweights contaminated
-observations. The per-time-point contamination probability `ε_t` has its own
-prior (`Beta(1, 30)` by default). The mixture is scored in closed form per time
-point, so `ε_t` is integrated out analytically and no discrete latent is
-sampled — keeping gradients smooth.
+Outliers are modelled as independent **additive spikes** on the expected series:
+
+```math
+\tilde{Y}_t = Y_t + \text{scale} \cdot \epsilon_t, \qquad
+\epsilon_t \sim \text{GEV}(\mu, \sigma, \xi)
+```
+
+The spikes are i.i.d. draws from a generalised extreme value distribution, so
+the component is nothing more than an
+[`Ascertainment`](@ref ComposableTuringIDModels.Ascertainment) over an
+[`IID`](@ref ComposableTuringIDModels.IID) latent process with an additive
+`transform`. This matches the R package, which adds
+`load_mean * ε_t / flow_median` to the expected concentration
+(`inst/stan/EpiSewer_main.stan`, the `additive outlier component` line) and
+scores `ε_t` with `gev_lpdf` under the default prior
+`GEV(μ = 0, σ = 2e-8, ξ = 4)` (`R/model_sampling.R`, `outliers_estimate`).
+
+The extreme right tail (`ξ = 4`) is what makes the tiny scale meaningful: the
+median spike is ~1.7e-8 while the 99% quantile is ~0.49, so a typical day is
+untouched and a rare day can absorb up to about half a case-equivalent of load
+before the transmission dynamics have to explain it. Stan declares `ε_t`
+non-negative; here the GEV's own support (`-σ/ξ = -5e-9` upwards) is used
+unaltered, which admits spikes below zero that are ~8 orders of magnitude
+smaller than the 99% quantile.
 
 # Fields
-- `error_model`: the wrapped error model (e.g. `NormalError()`), the main
-  per-time-point error distribution via `observation_error`.
-- `contamination_prob`: the (prior on the) per-time-point outlier probability
-  `ε_t`.
-- `outlier_scale`: how much more variable the outlier component is than the
-  main one — a `HalfNormal` prior or a fixed inflation factor.
+- `model`: the wrapped observation model, scoring the spiked expected series.
+- `spike`: the prior on the per-day spike `ε_t`, in units of `scale`.
+- `scale`: the expected-series-unit equivalent of one unit of spike, i.e. the R
+  package's `load_mean / flow_median` when the component sits on the
+  concentration scale. Because an `Ascertainment` `transform` cannot see
+  sampled parameters, this is a **construction-time constant**: set it from the
+  load-per-case prior *median* divided by the median flow rather than from the
+  sampled load per case. That approximation fixes the spike's units at the
+  prior median instead of tracking the posterior.
+
+# Placement
+Put it immediately inside [`FlowNormalize`](@ref EpiSewer.FlowNormalize), so the
+spike is added after the flow division and therefore lands on the concentration
+scale, exactly where Stan adds it:
+
+    scale = exp(lpc_prior_median) / flow_median
+    FlowNormalize(MeasurementOutliers(LogNormalError(); scale = scale))
 
 # Example
 ```julia
 using EpiSewer, ComposableTuringIDModels
-m = EpiSewer.MeasurementOutliers(NormalError())
+m = EpiSewer.MeasurementOutliers(NormalError(); scale = 100.0)
 model = as_turing_model(m, [100.0, missing, 500.0], fill(100.0, 3))
 ```
 """
-struct MeasurementOutliers{
-        M <: AbstractObservationErrorModel, C, S,
-    } <: AbstractObservationModel
-    error_model::M
-    contamination_prob::C
-    outlier_scale::S
+struct MeasurementOutliers{M <: AbstractObservationModel, S, T} <:
+    AbstractObservationModel
+    "The wrapped observation model."
+    model::M
+    "Prior on the per-day spike `ε_t`."
+    spike::S
+    "Expected-series-unit equivalent of one unit of spike."
+    scale::T
 end
 
 function MeasurementOutliers(
-        error_model::AbstractObservationErrorModel;
-        contamination_prob = Beta(1, 30),
-        outlier_scale = HalfNormal(2.0),
+        model::AbstractObservationModel;
+        spike = GeneralizedExtremeValue(0.0, 2.0e-8, 4.0),
+        scale = 1.0,
     )
-    return MeasurementOutliers(error_model, contamination_prob, outlier_scale)
+    return MeasurementOutliers(model, spike, scale)
 end
 
-@doc raw"""
+# The equivalent composition: an additive IID spike on the expected series.
+_spiked(m::MeasurementOutliers) = Ascertainment(
+    m.model, IID(m.spike);
+    transform = (Y_t, eps) -> Y_t .+ m.scale .* eps,
+    latent_prefix = "outliers",
+)
+
+"""
     as_turing_model(m::MeasurementOutliers, y_t, Y_t)
 
-Score a series against an outlier-mixture likelihood.
+Score a series against the spiked observation model: draw `ε_t` i.i.d. from
+`m.spike`, add `m.scale .* ε_t` to the expected series `Y_t`, and delegate to
+the wrapped model. `missing` entries are handled by the wrapped model.
 
-For each time point `i`: draw the contamination probability `ε_i` and outlier
-scale from their priors (through the `_at` seam, so a constant or a process
-works); a `missing` entry is sampled predictively from the main error
-distribution; an observed entry contributes the closed-form log of the
-two-component mixture.
-
-Returns `(; y_t, expected)`.
+Returns `(; y_t, expected)`, where `expected` is the spiked series.
 """
 @model function as_turing_model(m::MeasurementOutliers, y_t, Y_t)
-    p ~ as_turing_submodel(m.contamination_prob, length(Y_t); prefix = true)
-    s ~ as_turing_submodel(m.outlier_scale, length(Y_t); prefix = true)
-    priors ~ to_submodel(
-        generate_observation_error_priors(m.error_model, y_t, Y_t), false
-    )
-
-    pad_Y_t = Y_t .+ 1.0e-6
-
-    y = y_t isa NamedTuple ? y_t.y : y_t
-    if y isa MissingObservations
-        y = map(
-            (v, ispresent) -> ispresent ? v : missing, y.value, y.present
-        )
-    elseif ismissing(y)
-        y = Vector{Missing}(missing, length(Y_t))
-    end
-    diff_t = length(y) - length(Y_t)
-    @assert diff_t >= 0 "The observation vector must be at least as long as the expected observation vector"
-
-    context = __model__.context
-    varinfo = __varinfo__
-    scored = Vector{Any}(undef, length(y))
-    for i in eachindex(Y_t)
-        idx = i + diff_t
-        @inbounds obs_i = y[idx]
-
-        dist = observation_error(
-            m.error_model,
-            pad_Y_t[i],
-            map(pp -> _at(pp, i), values(priors))...,
-        )
-        p_i = _at(p, i)
-        s_i = _at(s, i)
-
-        vn = DynamicPPL.VarName{:y_t}(DynamicPPL.Index((idx,), NamedTuple()))
-
-        if ismissing(obs_i)
-            val, varinfo = DynamicPPL.tilde_assume!!(
-                context, dist, vn, y, varinfo
-            )
-            scored[idx] = val
-        else
-            mixture = OutlierMixture(dist, _outlier_dist(dist, s_i), p_i)
-            _, varinfo = DynamicPPL.tilde_observe!!(
-                context, mixture, obs_i, vn, y, varinfo
-            )
-            scored[idx] = obs_i
-        end
-    end
-
-    __varinfo__ = varinfo
-    return (; y_t = identity.(scored), expected = Y_t)
+    inner ~ as_turing_submodel(_spiked(m), y_t, Y_t)
+    return (; y_t = inner.y_t, expected = inner.expected)
 end
-
-# The wide outlier component: a Normal about the main location with the scale
-# inflated by `outlier_scale` (floored at 1 so a tiny main σ stays "wide").
-function _outlier_dist(dist::Distribution, scale::Real)
-    mu = mean(dist)
-    sigma = max(float(abs(scale)), 1.0)
-    return Normal(mu, sigma)
-end
-
-# A continuous distribution whose log-pdf is the closed-form two-component
-# mixture, so the standard `tilde_observe!!` path scores it AD-smoothly.
-struct OutlierMixture{D <: Distribution, S <: Distribution, P <: Real} <:
-    ContinuousUnivariateDistribution
-    main::D
-    outlier::S
-    p::P
-end
-
-Base.eltype(::Type{<:OutlierMixture}) = Float64
-Distributions.partype(::OutlierMixture) = Float64
-
-function Distributions.logpdf(mix::OutlierMixture, x::Real)
-    logp_main = log1p(-mix.p) + Distributions.logpdf(mix.main, x)
-    logp_out = log(mix.p) + Distributions.logpdf(mix.outlier, x)
-    return Distributions.logsumexp((logp_main, logp_out))
-end
-
-Distributions.pdf(mix::OutlierMixture, x::Real) = exp(Distributions.logpdf(mix, x))

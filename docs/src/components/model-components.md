@@ -22,7 +22,7 @@ missing.
 | measurements | `concentrations_observe` | Observe concentration measurements with a noise model | Observation error model wrapping a latent expected concentration, e.g. `NormalError` / `PoissonError` / `NegativeBinomialError` | covered |
 | measurements | `noise_estimate` / `noise_estimate_dPCR` | Estimate observation noise (coefficient of variation, dPCR noise) | `LogNormalError` in `src/measurements.jl` — a `LogNormal` whose real-space mean is the expected concentration and whose sd is `σ · Y_t`, so `σ` is the inferred CV; `DigitalPCRError` (binomial partition-count model) for the dPCR variant | covered (implemented) |
 | measurements | `LOD` (limit of detection) | Left-censoring of measurements below the detection limit | `LOD` in `src/measurements.jl` — an `AbstractObservationErrorModel` wrapping a `Distributions.censored`-based left-truncated error distribution (data reported at the LOD score as `logcdf`) | covered (implemented) |
-| sampling | `outliers_estimate` | Integrated outlier detection for measurements | `MeasurementOutliers` in `src/sampling.jl` — a two-component (main + wide contamination) mixture observation-error model with a `Beta` contamination prior | **diverges from the target** |
+| sampling | `outliers_estimate` | Integrated outlier detection for measurements | `MeasurementOutliers` in `src/sampling.jl` — an `Ascertainment` over `IID(GeneralizedExtremeValue(0, 2e-8, 4))` with an additive transform, adding `scale · ε_t` to the expected concentration | covered (implemented) |
 | sampling | `sample_effects` | Batch effects (weekday, age-of-sample) | `Stratify` (per-batch latent process) can represent grouped effects | covered (via `Stratify`) |
 | sewage | `flows_observe` | Flow-normalise concentrations using daily flow | `FlowNormalize` in `src/sewage.jl` — divides the expected **load** by the daily flow to get expected concentrations, then delegates to the wrapped observation model. The flow is data, passed as `y_t = (y = concentrations, flow = flow)` | covered (implemented) |
 | sewage | `residence_dist_assume` | Convolve infection-shedding signal through a sewer residence-time distribution | `LatentDelay` (discrete convolution with a PMF) | covered (via `LatentDelay`) |
@@ -44,7 +44,7 @@ distinct parts of EpiSewer — the infection process (`Renewal`), `R_t` smoothin
 (`HilbertSpaceGP` / `RandomWalk`), discrete delays (`LatentDelay`), and
 observation error (`NegativeBinomialError` / `NormalError`) — already have
 composable counterparts. The wastewater-specific pieces (flow normalisation,
-limit-of-detection censoring, dPCR noise, outlier mixtures, load-per-case
+limit-of-detection censoring, dPCR noise, outlier spikes, load-per-case
 calibration) had no direct counterpart in the ecosystem and were implemented as
 small `ComposableTuringIDModels.jl`-compatible `Struct`s (`FlowNormalize`,
 `LOD`, `LogNormalError`, `DigitalPCRError`, `MeasurementOutliers`) — see the
@@ -53,16 +53,8 @@ ecosystem.
 
 ## Known gaps
 
-Two kinds of gap are recorded in the status column, both from the 2026-08-17
-review pass (see [LLM-Assisted Development Process](@ref)).
-
-**Diverges from the target.** `MeasurementOutliers` models outliers as a
-two-component contamination mixture. EpiSewer's `outliers_estimate` does
-something different: it draws additive spikes `ε_t` from a generalised extreme
-value distribution and adds them to the expected concentration scaled by the
-load per case (`R/model_sampling.R`, `inst/stan/EpiSewer_main.stan`). The
-faithful form needs no new machinery — it is an `Ascertainment` over
-`IID(GeneralizedExtremeValue(...))` with an additive transform.
+One kind of gap is recorded in the status column, from the 2026-08-17 review
+pass (see [LLM-Assisted Development Process](@ref)).
 
 **Not in the default chain.** `EpiSewer.model()` composes a `Renewal` with
 random-walk `R_t` and the load → shedding delay → flow division → log-normal
