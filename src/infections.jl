@@ -76,22 +76,39 @@ error rather than a rejected proposal in a log-normal measurement model.
 ``c_t`` is the coefficient of variation ``\sqrt{1/\iota_t + \xi^2}`` under a
 smooth upper limit, ``u - \mathrm{softplus}(u - c, k)`` with ``u`` = `cv_cap` and
 ``k`` = `cv_sharpness`. The limit tracks ``c`` closely well below ``u`` and
-saturates above it, so the moments hold wherever it is inactive. It is not a
-refinement: ``\sqrt{1/\iota_t + \xi^2}`` diverges as ``\iota_t`` approaches zero,
-so an arbitrarily small expectation would get an arbitrarily wide draw. That is a
-funnel, and its cost is measurable — uncapped, the sampler's step size collapses
-by ten orders of magnitude and every iteration runs to maximum tree depth. R caps
-it the same way and for the same reason
+saturates above it, so the moments hold wherever it is inactive. Without it the
+coefficient of variation diverges as ``\iota_t`` approaches zero, giving an
+arbitrarily small expectation an arbitrarily wide draw. R applies the same limit
+with the same constants
 (`soft_upper(sqrt(iota .* (1 + iota * I_xi^2)) ./ iota, 0.5, 10)`), which is why
-its own comment calls the result an approximation to a negative binomial.
+its own comment calls the result an approximation to a negative binomial. Setting
+`cv_cap = Inf` restores the exact negative-binomial variance.
 
 The parameterisation is **non-centred**: the sampled quantity is the standard
-normal ``\tilde{I}_t`` and the location and scale are applied afterwards. That
-keeps the prior on the sampled parameter free of ``\iota_t``, which is what makes
-the geometry tractable when ``\iota_t`` itself is inferred.
+normal ``\tilde{I}_t`` and the location and scale are applied afterwards. This is
+forced rather than chosen — `apply_modifier` is deterministic and a modifier's
+priors resolve before the scan, so a modifier cannot draw ``I_t`` conditional on
+``\iota_t`` (ComposableTuringIDModels issue #271).
 
 Because the modified incidence is what the renewal scan feeds forward, the noise
 compounds through the process rather than perturbing each day in isolation.
+
+# Effect on sampling
+The noise earns its parameters. Measured on the thinned example series, 100
+warmup + 100 draws under `NUTS(0.9)` with Mooncake, against the same model with
+`infection_noise = nothing`:
+
+| infection noise | mean tree depth | divergences |
+|:---|---:|---:|
+| none | 3.50 | 85 |
+| this component | 10.00 | 0 |
+
+A deterministic renewal makes every observation an exact function of ``R_t`` and
+the seeding, and that stiffness is what the divergences are. The cost is
+trajectory length: maximum tree depth, so 1024 leapfrog steps an iteration. R
+reaches zero divergences *and* zero maximum-treedepth hits, and the difference
+there is the centred parameterisation its Stan code can express and a modifier
+cannot.
 
 # Fields
 - `dist`: the noise family, matched to the negative-binomial moments. Defaults to
