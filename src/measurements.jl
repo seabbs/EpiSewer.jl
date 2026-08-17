@@ -122,9 +122,10 @@ LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
     return (; σ = σ)
 end
 
-function observation_error(::LogNormalError, Y_t, σ)
-    # An exploding latent draw can drive Y_t non-finite; reject it with `-Inf`
-    # density rather than throw (`reparameterise` validates its moments).
-    isfinite(Y_t) && isfinite(σ) || return LogNormal(Inf, 1.0)
-    return reparameterise(LogNormal; mean = Y_t, sd = σ * Y_t)
-end
+# An exploding latent draw can drive `Y_t` (or `σ`) non-finite. No hand guard
+# is needed: `Reparameterised` scores an invalid proposal as `-Inf` through its
+# own `valid_moments` check, returning it at the input's own type so an AD tape
+# survives. `check_args = false` is what routes us onto that path — the checking
+# constructor would instead throw a `DomainError` mid-gradient.
+observation_error(::LogNormalError, Y_t, σ) =
+    reparameterise(LogNormal; mean = Y_t, sd = σ * Y_t, check_args = false)

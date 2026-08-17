@@ -126,6 +126,37 @@ end
     @test Distributions.logpdf(d, 100.0) == -Inf
 end
 
+@testitem "LogNormalError scores an invalid proposal at the input's own type" begin
+    using EpiSewer
+    using Distributions: Distributions
+    using ForwardDiff
+
+    # The rejection is `Reparameterised`'s own, so `-Inf` comes back as a
+    # `Dual` rather than a bare `Float64` that would break a gradient tape.
+    d = EpiSewer.observation_error(
+        EpiSewer.LogNormalError(), ForwardDiff.Dual(Inf, 1.0), 0.1
+    )
+    lp = Distributions.logpdf(d, 100.0)
+    @test lp isa ForwardDiff.Dual
+    @test ForwardDiff.value(lp) == -Inf
+end
+
+@testitem "LOD(LogNormalError()) throws at the LOD on an invalid proposal" begin
+    using EpiSewer
+    using Distributions: Distributions
+
+    # `Censored`'s boundary term is a `logcdf`, and `Reparameterised` guards
+    # only `logpdf`/`pdf` with `valid_moments` — its `logcdf` routes through
+    # `native`, which throws. So an exploding latent draw scores `-Inf` above
+    # the LOD but raises at it. Upstream gap in ReparameterisedDistributions;
+    # not something to guard around in `observation_error`.
+    d = EpiSewer.observation_error(
+        EpiSewer.LOD(EpiSewer.LogNormalError(); lod = 50.0), Inf, 0.1
+    )
+    @test Distributions.logpdf(d, 100.0) == -Inf
+    @test_broken Distributions.logpdf(d, 50.0) == -Inf
+end
+
 @testitem "DigitalPCRError scores dPCR partition counts via transform composition" begin
     using EpiSewer
     using Turing, Distributions
