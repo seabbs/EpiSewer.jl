@@ -21,10 +21,6 @@ using EpiAwareADTools: EpiAwareADTools
 using ReparameterisedDistributions: reparameterise
 using CSV: CSV
 using DataFrames: DataFrames, DataFrame
-using DataFramesMeta: DataFramesMeta
-using AlgebraOfGraphics: AlgebraOfGraphics
-using PairPlots: PairPlots
-
 
 # --- Data ---
 include("data.jl")

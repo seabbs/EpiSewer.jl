@@ -8,8 +8,9 @@
 #       Ascertainment(LatentDelay(FlowNormalize(LogNormalError), shed), lpc)
 #   - inference: Hamiltonian MCMC via Turing NUTS, 2 chains on 2 threads.
 #
-# Run from the package root:
-#   julia --project=. --threads=2 examples/ww_fit_example.jl
+# Run from the package root, in the docs environment (the package itself does not
+# depend on MCMCChains — see docs/Project.toml):
+#   julia --project=docs --threads=2 examples/ww_fit_example.jl
 #
 # The fitted Chains are serialized to a gitignored path so the plotting
 # scripts can reuse them without refitting.

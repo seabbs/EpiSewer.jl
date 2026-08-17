@@ -114,9 +114,13 @@ The full worked example (NUTS fit with 2 chains on 2 threads, then the
 README plots) lives in [`examples/`](https://github.com/seabbs/EpiSewer.jl/tree/main/examples):
 
 ```sh
-julia --project=. --threads=2 examples/ww_fit_example.jl   # NUTS fit + diagnostics
-julia --project=docs --threads=2 examples/ww_plots.jl      # R_t + prior-vs-posterior plots
+julia --project=docs --threads=2 examples/ww_fit_example.jl   # NUTS fit + diagnostics
+julia --project=docs --threads=2 examples/ww_plots.jl         # R_t + prior-vs-posterior plots
 ```
+
+Both scripts run in the docs environment: the package itself depends only on what
+the model needs, so the inference-output and plotting packages the scripts use
+(`MCMCChains`, `CairoMakie`, `PairPlots`) are declared in `docs/Project.toml`.
 
 The fitted effective reproduction number `R_t` (reconstructed from the
 renewal latent):
