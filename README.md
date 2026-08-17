@@ -104,13 +104,18 @@ using Dates: Day
 # Quantile bands across draws, one row per time point.
 function bands(m, dates)
     q(p) = [quantile(view(m, i, :), p) for i in axes(m, 1)]
-    return DataFrame(date = dates, med = q(0.5), lo = q(0.25), hi = q(0.75))
+    return DataFrame(date = dates, med = q(0.5), lo = q(0.25), hi = q(0.75),
+        lo95 = q(0.025), hi95 = q(0.975))
 end
 
 # A median line over its 50% interval.
 ribbon(df) = data(df) * (
     mapping(:date, :lo, :hi) * visual(Band; alpha = 0.35, color = :steelblue) +
         mapping(:date, :med) * visual(Lines; linewidth = 2, color = :steelblue))
+
+# The 95% interval underneath, for a quantity whose tails fit on the axis.
+outer(df) = data(df) * mapping(:date, :lo95, :hi95) *
+    visual(Band; alpha = 0.18, color = :steelblue)
 
 # One generated quantity across the draws, as a time-by-draw matrix.
 across(f) = reduce(hcat, [f(g) for g in draws])
@@ -144,12 +149,16 @@ draw(
 `Renewal` samples a latent `Z_t` and applies its `exp` transformation, so `R_t = exp.(Z_t)`.
 
 ```julia
-draw(ribbon(bands(across(g -> exp.(g.Z_t)), inf_dates));
-    axis = (; ylabel = "R_t", title = "Prior R_t: median and 50% interval"),
+rt = bands(across(g -> exp.(g.Z_t)), inf_dates)
+
+draw(outer(rt) + ribbon(rt);
+    axis = (; ylabel = "R_t",
+        title = "Prior R_t: median, 50% and 95% intervals"),
     figure = (; size = (860, 300)))
 ```
 
 The two latent series behind a measurement: the load arriving at the sampling site each day, and the infections that shed it.
+These carry the 50% interval only, because their 95% interval spans about eighteen orders of magnitude and no axis carries that usefully.
 
 ```julia
 latent = vcat(
