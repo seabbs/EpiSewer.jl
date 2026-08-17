@@ -54,9 +54,8 @@ a `LatentDelay` (and by default not even that, since EpiSewer's default
 `residence_dist = c(1)` is a point mass at same-day arrival, i.e. an identity
 convolution).
 
-The remaining five are small `ComposableTuringIDModels.jl`-compatible `Struct`s,
-and three of them are thin compositions of ecosystem pieces rather than new
-machinery:
+The remaining five are `ComposableTuringIDModels.jl`-compatible `Struct`s.
+Three are compositions of ecosystem pieces:
 
 - `MeasurementOutliers` is an `Ascertainment` over `IID(truncated(GEV(...)))`
   with an additive transform.
@@ -64,9 +63,10 @@ machinery:
   link over a `BinomialError`.
 - `LOD` wraps an inner error model's distribution in `Distributions.censored`.
 
-Only `FlowNormalize` (which reads the daily flow out of the observation-data
-contract) and `LogNormalError` (a relative-noise error family, which the
-ecosystem does not provide) carry logic of their own.
+Two implement behaviour the ecosystem does not provide.
+`FlowNormalize` reads the daily flow out of the observation-data contract.
+`LogNormalError` is a relative-noise error family, parameterised by a
+coefficient of variation.
 
 ## What the default chain leaves out
 

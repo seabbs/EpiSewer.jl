@@ -14,8 +14,8 @@ Outliers are modelled as independent **additive spikes** on the expected series:
 ```
 
 The spikes are i.i.d. draws from a generalised extreme value distribution
-truncated at zero, so the component is nothing more than an `Ascertainment` over
-an `IID` latent process with an additive `transform`. This matches the R package,
+truncated at zero. The component is an `Ascertainment` over an `IID` latent
+process with an additive `transform`. This matches the R package,
 which adds `load_mean * ε_t / flow_median` to the expected concentration
 (`inst/stan/EpiSewer_main.stan`, the `additive outlier component` line) and
 scores `ε_t` with `gev_lpdf` under the prior `GEV(μ = 0, σ = 2e-8, ξ = 4)`
