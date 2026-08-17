@@ -106,11 +106,31 @@ const LINKCHECK_IGNORE = Regex[]
 
 # README -> index.md link rewrites: `from => to` pairs applied line by line,
 # e.g. rewriting an absolute docs URL to an in-site `@ref`.
-const INDEX_REWRITES = Pair{String, String}[]
+#
+# The README carries an absolute URL so it reads correctly on GitHub; on the
+# home page the same link becomes an in-site cross-reference, which resolves
+# whether or not the site is published yet.
+const INDEX_REWRITES = Pair{String, String}[
+    "https://epiaware.org/EpiSewer.jl/stable/components/model-components" =>
+        "@ref model-components",
+]
 
 # Whether README ```julia blocks become runnable `@example readme` blocks on
 # the home page. Keep `true` for real, runnable examples; set `false` when
 # they are illustrative (placeholder names) and must not execute.
+#
+# This is `true`, and the README relies on it: its worked example is executed
+# by the docs build, and its Makie figures are rendered from that execution
+# rather than committed as images. Two consequences worth knowing before
+# editing the README:
+#
+#   - Every ```julia fence runs, and they share one `@example readme`
+#     namespace, so blocks may depend on earlier ones and a broken block
+#     fails the docs build.
+#   - `build_index` rewrites any fence *starting with* ```julia, which
+#     includes ```julia-repl. The README's posterior-fit block is therefore
+#     fenced ```jl on purpose: that fit takes tens of minutes and must not
+#     run on every push. Do not "tidy" it to ```julia.
 const README_EXECUTE = true
 
 # README headings whose whole section (heading + body, to the next heading of
