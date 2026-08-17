@@ -135,8 +135,8 @@ function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
     observed_load = [120.0, 90.0, 110.0, 95.0, 105.0]
     function lpc_loglik(θ)
         lpc = θ[1]
-        # Scalar generator, not a broadcast: Enzyme cannot prove the
-        # temporary `infections .* lpc` array readonly and errors.
+        # A scalar generator rather than a broadcast over
+        # `infections .* lpc`, to keep no array temporary on the tape.
         return sum(
             logpdf(Normal(inf * lpc, 10.0), y)
                 for (inf, y) in zip(infections, observed_load)
@@ -192,8 +192,24 @@ function backends()
         (name = "ForwardDiff", backend = AutoForwardDiff()),
         (name = "ReverseDiff (tape)", backend = AutoReverseDiff(compile = false)),
         (name = "ReverseDiff (compiled)", backend = AutoReverseDiff(compile = true)),
-        (name = "Enzyme forward", backend = AutoEnzyme(mode = Enzyme.set_runtime_activity(Enzyme.Forward))),
-        (name = "Enzyme reverse", backend = AutoEnzyme(mode = Enzyme.set_runtime_activity(Enzyme.Reverse))),
+        # `function_annotation = Enzyme.Const`: the scenario closures capture the
+        # fixture data but carry no derivative data of their own. Without it
+        # Enzyme raises `EnzymeMutabilityException` ("argument cannot be proven
+        # readonly") on any closure that broadcasts over a captured array.
+        (
+            name = "Enzyme forward",
+            backend = AutoEnzyme(
+                mode = Enzyme.set_runtime_activity(Enzyme.Forward),
+                function_annotation = Enzyme.Const
+            ),
+        ),
+        (
+            name = "Enzyme reverse",
+            backend = AutoEnzyme(
+                mode = Enzyme.set_runtime_activity(Enzyme.Reverse),
+                function_annotation = Enzyme.Const
+            ),
+        ),
         (name = "Mooncake reverse", backend = AutoMooncake(config = nothing)),
         (name = "Mooncake forward", backend = AutoMooncakeForward()),
     ]
