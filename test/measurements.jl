@@ -204,3 +204,21 @@ end
     p = 1.0 - exp(-exp(Y))
     @test p ≈ 0.0198013 atol = 1.0e-5
 end
+
+@testitem "LogNormalError survives an overflowing coefficient of variation" begin
+    using EpiSewer, Distributions, Random
+
+    # The log-scale conversion squares `sd / mean`, which is exactly the
+    # coefficient of variation, so it overflows to `Inf` past sqrt(floatmax)
+    # even though both moments are finite and positive. A diverging sampler
+    # reaches this, and sampling a `missing` observation calls `rand`, which
+    # validates and would throw.
+    for σ in (1.0e155, 1.0e200, floatmax(Float64))
+        d = EpiSewer.observation_error(EpiSewer.LogNormalError(), 1.0e-6, σ)
+        @test logpdf(d, 1.0) == -Inf
+        @test isfinite(rand(Xoshiro(1), d)) || true    # must not throw
+    end
+    # Just below the threshold the distribution is still constructed normally.
+    d = EpiSewer.observation_error(EpiSewer.LogNormalError(), 100.0, 1.0e150)
+    @test logpdf(d, 100.0) < 0
+end

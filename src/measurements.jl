@@ -205,7 +205,7 @@ LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
 end
 
 function observation_error(::LogNormalError, Y_t, σ)
-    # Two guards covering disjoint failures, both reachable from a diverging
+    # Three guards covering disjoint failures, all reachable from a diverging
     # sampler.
     #
     # A non-finite `Y_t` or `σ` returns a plain `LogNormal` sentinel, whose
@@ -216,6 +216,15 @@ function observation_error(::LogNormalError, Y_t, σ)
     # A bare `Float64` `-Inf` is deliberate here — giving the sentinel the
     # input's type instead makes AD return a `NaN` partial rather than `0.0`.
     isfinite(Y_t) && isfinite(σ) || return LogNormal(Inf, 1.0)
+    # An enormous but finite coefficient of variation. The log-scale conversion
+    # is `s² = log1p((sd / mean)²)`, and `sd / mean` is exactly `σ` here, so
+    # `σ²` overflows to `Inf` once `σ` passes `sqrt(floatmax)` ≈ 1.3e154 — and
+    # `Inf` reaches the constructor as a valid-looking argument rather than as a
+    # non-finite one, so the guard above does not catch it. Sampling a `missing`
+    # observation calls `rand`, which validates through `native` and throws,
+    # so an extreme proposal has to be turned into `-Inf` here rather than
+    # rejected downstream.
+    σ < sqrt(floatmax(Float64)) || return LogNormal(Inf, 1.0)
     # Finite but invalid moments (`Y_t <= 0`, `σ <= 0`) reach `Reparameterised`,
     # whose `logpdf` scores them `-Inf` at the input's own type. `check_args =
     # false` is what routes us there: the checking constructor validates the
