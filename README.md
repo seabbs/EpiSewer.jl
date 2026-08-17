@@ -14,31 +14,14 @@ EpiSewer.jl provides a Bayesian generative model to estimate the effective repro
 
 ## Why EpiSewer.jl?
 
-- **Composable model**: the wastewater model is assembled from interchangeable infection and observation parts, each of which is a model in its own right, rather than one monolithic model.
+- **Composable model**: the wastewater model is assembled from interchangeable infection and observation parts, each of which is a model in its own right.
+- **The model**: infections follow a renewal process driven by a smoothly varying `R_t`; convolving them with an incubation period and a shedding load profile gives the pathogen load arriving at the sampling site, which divided by the daily flow gives the measured concentration.
 - **Swap a part to change an assumption**: change the `R_t` process, a delay distribution, or the measurement noise on its own, and read the consequences back off the assembly.
 - **One interface**: the assembly becomes a single [Turing](https://turinglang.org) model through `as_turing_model`, so the full Turing toolbox applies.
-- **A port of the R package**: the default assembly is the [EpiSewer](https://github.com/adrian-lison/EpiSewer) R package's default model, on its example data.
-- **Built from the ecosystem**: five structs cover a model whose R original is assembled from about twenty components; the rest is composition of existing `ComposableTuringIDModels.jl` pieces.
+- **The R package's defaults**: the default assembly is the [EpiSewer](https://github.com/adrian-lison/EpiSewer) R package's default model, with its priors, on its example data. Missing and non-daily measurements are handled as they are there.
+- **Built from the ecosystem**: five structs cover a model whose R original is assembled from about twenty components, and the rest is composition of existing `ComposableTuringIDModels.jl` pieces.
 
-Posterior fitting is not yet demonstrated on the thinned example data. The "Fitting it" subsection below records what has been measured.
-
-### The model in words
-
-This describes the model the EpiSewer R package implements.
-EpiSewer.jl replicates part of it.
-The [Model components](https://epiaware.org/EpiSewer.jl/stable/components/model-components) page maps each piece onto the ecosystem component that provides it, and sets out which parts the default Julia chain composes and which sit outside it.
-
-**Data.** The model is driven by a time series of wastewater concentration measurements, ideally in gene copies per millilitre. Not every day needs a measurement: the model accounts for missing or non-daily observations. Alongside the measurements, daily wastewater flow records normalise the concentration signal for day-to-day variation in flow, for example due to rainfall. Confirmed case counts from the catchment area are optional, and calibrate the model so that the estimated number of infections roughly matches observed cases.
-
-**From data to signal.** Raw concentrations are normalised by the daily flow, which removes much of the noise a varying flow introduces. The normalised signal is a delayed and blurred trace of the infection process upstream: infected individuals begin to shed the pathogen some time after infection and continue to shed over a period of days, and the shed load is blurred and delayed further as it travels through the sewer network to the sampling site.
-
-**Assumptions.** Turning concentrations back into transmission dynamics needs a set of disease-specific distributions, typically taken from the literature: the generation time, the shedding load distribution, and, because the shedding load is usually expressed relative to symptom onset, the incubation period. All are discretised to a daily time step.
-
-**The latent model.** Underlying the observations is a latent epidemic process. New infections each day evolve according to a renewal process driven by a time-varying reproduction number, `R_t`, which itself varies smoothly over time under a flexible smoothing model such as a Gaussian process or a random walk. The R model's infection process also carries stochastic noise beyond what a deterministic renewal implies.
-
-**The observation model.** Infections are mapped to an expected load by convolving with the shedding load distribution. In the R model that load is then delayed through the sewer residence time before being divided by the flow to give an expected concentration. Observed concentrations are that expected concentration corrupted by measurement noise.
-
-**Estimation.** Together these give a full Bayesian generative model, fitted with Hamiltonian MCMC to produce a posterior over every parameter, and from it `R_t` and the other transmission indicators with credible intervals.
+The [Model components](https://epiaware.org/EpiSewer.jl/stable/components/model-components) page maps each component of the R model onto the ecosystem piece that provides it, and marks the boundary of the default chain.
 
 ### Derived from EpiSewer
 
@@ -100,164 +83,123 @@ mdl_t = as_turing_model(mdl, (y = y, flow = flow), n)
 Draw from the prior and inspect the generated quantities.
 
 ```julia
-prior = sample(mdl_t, Prior(), 200; progress = false)
+prior = sample(mdl_t, Prior(), 300; progress = false)
 draws = vec(returned(mdl_t, prior))
 first_draw = first(draws)
 map(x -> round.(extrema(x); sigdigits = 3),
     (R_t = exp.(first_draw.Z_t), I_t = first_draw.I_t,
-        concentration = first_draw.generated_y_t))
-```
-
-Summarise `R_t` across the prior draws.
-`Renewal` samples a latent `Z_t` and applies its `exp` transformation, so `R_t = exp.(Z_t)`.
-
-```julia
-using Statistics: median, quantile
-
-Rt_draws = reduce(hcat, [exp.(g.Z_t) for g in draws])
-Rt_median = [median(view(Rt_draws, i, :)) for i in axes(Rt_draws, 1)]
-(median = round(median(Rt_median); digits = 2),
-    range = round.(extrema(Rt_median); digits = 2))
+        concentration = first_draw.expected_y_t))
 ```
 
 ### Figures
 
-The docs build executes these blocks, so the figures on the rendered documentation page are produced by the example's own code.
-Nothing is committed as an image.
+The docs build executes these blocks, so the figures on the rendered documentation page are produced by this code.
 
 ```julia
-using CairoMakie, Dates
+using AlgebraOfGraphics, CairoMakie, DataFrames
+using Statistics: quantile
+using Dates: Day
 
-# `band!` takes numeric x, so dates are plotted as day numbers and the ticks
-# carry the formatted dates.
-xnum(dates) = Dates.value.(dates)
-function month_ticks(dates)
-    ms = filter(dt -> Dates.day(dt) == 1, dates)
-    return (xnum(ms), Dates.format.(ms, "u yyyy"))
+# Quantile bands across draws, one row per time point.
+function bands(m, dates)
+    q(p) = [quantile(view(m, i, :), p) for i in axes(m, 1)]
+    return DataFrame(date = dates, med = q(0.5), lo = q(0.25), hi = q(0.75))
 end
-```
 
-The measurements the model is given, against the ones the thinning withholds.
-The flow that normalises them is below.
+# A median line over its 50% interval.
+ribbon(df) = data(df) * (
+    mapping(:date, :lo, :hi) * visual(Band; alpha = 0.35, color = :steelblue) +
+        mapping(:date, :med) * visual(Lines; linewidth = 2, color = :steelblue))
 
-```julia
+# One generated quantity across the draws, as a time-by-draw matrix.
+across(f) = reduce(hcat, [f(g) for g in draws])
+
 obs_dates = d.measurements.date
-kept = .!ismissing.(y)
-withheld = ismissing.(y) .& .!ismissing.(d.measurements.concentration)
-
-fig = Figure(size = (820, 460))
-ax = Axis(fig[1, 1]; ylabel = "gc/mL", yscale = log10,
-    xticks = month_ticks(obs_dates),
-    title = "Measurements, thinned to Mondays and Thursdays")
-scatter!(ax, xnum(obs_dates[withheld]),
-    Float64.(d.measurements.concentration[withheld]);
-    color = (:grey, 0.55), marker = :xcross, markersize = 7, label = "withheld")
-scatter!(ax, xnum(obs_dates[kept]), Float64.(y[kept]);
-    color = :black, markersize = 7, label = "given to the model")
-axislegend(ax; position = :rt, framevisible = false)
-ax_flow = Axis(fig[2, 1]; ylabel = "flow (mL/day)",
-    xticks = month_ticks(obs_dates))
-lines!(ax_flow, xnum(obs_dates), flow; color = :seagreen)
-fig
-```
-
-The prior on `R_t`, over the infection series including its lead-in.
-
-```julia
 inf_dates = collect(
     (first(obs_dates) - Day(EpiSewer.observation_lead_in(mdl))):Day(1):last(obs_dates))
-band_q(m, p) = [quantile(view(m, i, :), p) for i in axes(m, 1)]
-x = xnum(inf_dates)
-
-fig = Figure(size = (820, 290))
-ax = Axis(fig[1, 1]; ylabel = "R_t", yscale = log10,
-    xticks = month_ticks(inf_dates),
-    title = "Prior R_t: median, 50% and 95% intervals")
-band!(ax, x, band_q(Rt_draws, 0.025), band_q(Rt_draws, 0.975);
-    color = (:steelblue, 0.15))
-band!(ax, x, band_q(Rt_draws, 0.25), band_q(Rt_draws, 0.75);
-    color = (:steelblue, 0.35))
-lines!(ax, x, band_q(Rt_draws, 0.5); color = :steelblue, linewidth = 2)
-hlines!(ax, [1.0]; color = :grey, linestyle = :dash)
-fig
 ```
 
-The R package's README also plots the concentration fit, the expected load and the infections.
-Those need a posterior.
-Drawn from the prior they carry no information: on a withheld day the 95% prior predictive concentration runs from 9e-7 to 7e57 gc/mL, about 64 orders of magnitude, because a 164-step random walk on `log R_t` compounds through the renewal process.
-The measurements themselves span 145 to 3200 gc/mL.
-`R_t` is the one prior quantity with a readable scale, so it is the one drawn.
+The concentration the model expects, against the measurements it was given and the ones the thinning withheld.
 
-Note also that `generated_y_t` returns the observed value on a day that has one, and a draw only where the series is `missing`.
-A ribbon built from it is therefore part data and part prior, which is why the measurements are plotted on their own above.
+```julia
+points = dropmissing(DataFrame(date = obs_dates,
+    concentration = d.measurements.concentration,
+    measurement = ifelse.(.!ismissing.(y), "given to the model", "withheld")))
 
-### Fitting it
+draw(
+    ribbon(bands(across(g -> g.expected_y_t), obs_dates)) +
+        data(points) * mapping(:date, :concentration,
+        color = :measurement, marker = :measurement) *
+        visual(Scatter; markersize = 8),
+    scales(Color = (; palette = [:black, :grey55]),
+        Marker = (; palette = [:circle, :xcross]));
+    axis = (; yscale = log10, ylabel = "gc/mL",
+        title = "Prior predictive concentration: median and 50% interval"),
+    figure = (; size = (860, 330))
+)
+```
 
-Everything above runs in seconds.
-Posterior inference does not, and it is not yet demonstrated.
-Three things have been measured and are worth keeping apart.
+`R_t`, over the infection series including its lead-in.
+`Renewal` samples a latent `Z_t` and applies its `exp` transformation, so `R_t = exp.(Z_t)`.
 
-**Wall clock.** The model has 255 parameters: 164 random-walk steps, 87 withheld days that the model imputes, and 4 scalars.
-NUTS adapts to a step size near 0.001 and then sits at maximum tree depth, so one iteration costs hundreds of gradients.
-The gradient is the part that is solved.
-Mooncake costs 1.4 ms against ForwardDiff's 24 ms on this model, and Turing's default is ForwardDiff, so the backend has to be set explicitly.
-Even so, 2 chains of 300 warmup and 300 draws took 19 minutes.
+```julia
+draw(ribbon(bands(across(g -> exp.(g.Z_t)), inf_dates));
+    axis = (; ylabel = "R_t", title = "Prior R_t: median and 50% interval"),
+    figure = (; size = (860, 300)))
+```
 
-**Convergence.** That run returned a maximum R-hat of 2.8, a minimum effective sample size of 2, and 122 of its 255 parameters above 1.05.
-4 chains of 400 warmup and 400 draws did not finish inside 30 minutes.
+The two latent series behind a measurement: the load arriving at the sampling site each day, and the infections that shed it.
 
-**Data density.** At identical settings the same model samples with no divergent transitions on the dense series of 117 measurements, and produces 53 in a 100-iteration run on the thinned 33.
-That points at weak identification rather than a fault in the port: 33 measurements do not pin down 164 random-walk steps.
+```julia
+latent = vcat(
+    insertcols(bands(across(g -> g.expected_y_t .* flow), obs_dates),
+        :quantity => "prior expected load (gc/day)"),
+    insertcols(bands(across(g -> g.I_t), inf_dates),
+        :quantity => "prior infections"))
 
-Why the R package fits this same thinned series is not established here.
-Its Gaussian-process prior on `R_t` may regularise where a random walk does not, or Stan's parameterisation may handle the geometry better.
-Tracked in [#16](https://github.com/seabbs/EpiSewer.jl/issues/16).
+draw(ribbon(latent) * mapping(layout = :quantity);
+    axis = (; yscale = log10), facet = (; linkyaxes = false),
+    figure = (; size = (860, 320)))
+```
 
-The settings a fit needs:
+Fit with NUTS.
+Turing defaults to `ForwardDiff`; set a reverse-mode backend, which is much cheaper per gradient at this size.
 
 ```jl
 import Mooncake
 
-chn = sample(
-    mdl_t, NUTS(0.9; adtype = Turing.AutoMooncake()),
-    MCMCThreads(), 400, 4; warmup = 400, progress = false)
-
-Rt_post = reduce(hcat, [exp.(g.Z_t) for g in vec(returned(mdl_t, chn))])
+chn = sample(mdl_t, NUTS(0.9; adtype = Turing.AutoMooncake()),
+    MCMCThreads(), 500, 4; warmup = 500)
 ```
 
+Substituting `vec(returned(mdl_t, chn))` for `draws` turns every figure above into a posterior summary.
+
 That block is fenced ` ```jl ` rather than ` ```julia ` on purpose.
-The docs build executes every ` ```julia ` fence in this README, and a fit of this length does not belong in a build that runs on every push.
+The docs build executes every ` ```julia ` fence in this README, and sampling belongs outside a build that runs on every push.
 
-Check `MCMCChains.gelmandiag` and the divergence count before reading anything off a chain.
-Treat `R_t` near the end of the series with care either way.
-As the R package's README also notes, wastewater arrives delayed, so the most recent days are informed by very little data.
-
-## Swap a component
+### Swapping a component
 
 Every stage is interchangeable, so a changed modelling assumption is a changed argument rather than a new model.
-`infection_model` and `observation_model` replace a whole stage.
-The delay keywords replace one distribution.
+`rt` replaces the `R_t` prior, `infection_model` and `observation_model` replace a whole stage, and the delay keywords replace one distribution.
 
-Same observation chain, a different `R_t` process.
-Here an AR(1) rather than a random walk.
+The default `R_t` prior is the R package's approximate Gaussian process.
+A random walk instead:
 
 ```julia
-using Distributions: Gamma, Normal
-
-gen = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1
-ar_mdl = EpiSewer.model(
-    infection_model = Renewal(;
-        generation_time = gen, rt = AR(), initialisation = Normal(),
-        D_gen = 15.0))
+rw_mdl = EpiSewer.model(rt = RandomWalk())
+rw_mdl.infection_model.rt
 ```
 
 Adding a sewer residence time lengthens the observation chain, so read `n` back from `observation_lead_in` rather than hard-coding it.
 
 ```julia
+using Distributions: Gamma
+
 res_mdl = EpiSewer.model(residence_dist = Gamma(2.0, 1.0), D_residence = 5.0)
 (default = EpiSewer.observation_lead_in(mdl),
     with_residence = EpiSewer.observation_lead_in(res_mdl))
 ```
+
 
 ## Related packages
 

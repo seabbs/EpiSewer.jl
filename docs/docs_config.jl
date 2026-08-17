@@ -128,9 +128,9 @@ const INDEX_REWRITES = Pair{String, String}[
 #     namespace, so blocks may depend on earlier ones and a broken block
 #     fails the docs build.
 #   - `build_index` rewrites any fence *starting with* ```julia, which
-#     includes ```julia-repl. The README's posterior-fit block is therefore
-#     fenced ```jl on purpose: that fit takes tens of minutes and must not
-#     run on every push. Do not "tidy" it to ```julia.
+#     includes ```julia-repl. The README's NUTS block is therefore fenced
+#     ```jl on purpose, so that sampling stays outside a build that runs on
+#     every push. Do not "tidy" it to ```julia.
 const README_EXECUTE = true
 
 # README headings whose whole section (heading + body, to the next heading of
