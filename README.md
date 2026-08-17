@@ -137,7 +137,7 @@ Everything above runs in seconds, which is why it is the example.
 Posterior inference on this model does not.
 33 measurements inform 164 random-walk steps plus 87 imputed missing days.
 The sampler adapts to a step size around 0.001 and then spends most of its time in maximum-depth trees.
-Measured here, 4 chains of 400 warmup plus 400 draws did not finish inside 30 minutes.
+Measured here, 2 chains of 300 warmup and 300 draws took 19 minutes and returned a maximum R-hat of 2.8 with a minimum effective sample size of 2, and 4 chains of 400 warmup and 400 draws did not finish inside 30 minutes.
 The fit is therefore shown rather than run, and the block below is deliberately not executed as part of this page.
 
 Two settings matter more than the iteration counts.
