@@ -5,10 +5,10 @@
 
 A thin flow-normalization wrapper (the `flows_observe` component in EpiSewer):
 `concentration_t = load_t / flow_t`. The division is delegated to the
-ecosystem's [`TransformObservationModel`](@ref ComposableTuringIDModels.TransformObservationModel), and the **flow is data**,
+ecosystem's `TransformObservationModel`, and the **flow is data**,
 passed at `as_turing_model` time as `y_t = (y = concentrations, flow = flow)`
 — not stored on the model (the same data contract
-[`BinomialError`](@ref ComposableTuringIDModels.BinomialError) uses for its trial counts).
+`BinomialError` uses for its trial counts).
 
 Place `FlowNormalize` **inside** the chain, after the load-scaling and delay
 components and before the observation-error model, so the division is applied
@@ -42,7 +42,7 @@ model. `y_t` must be `(y = observed_concentrations, flow = flow_vector)`.
 The flow values are aligned to the expected series' tail (a `LatentDelay`
 above truncates the expected series from its right). The division is performed
 by composing the inner model with a
-[`TransformObservationModel`](@ref ComposableTuringIDModels.TransformObservationModel) whose transform is `Y -> Y ./ flow_tail`.
+`TransformObservationModel` whose transform is `Y -> Y ./ flow_tail`.
 """
 @model function as_turing_model(m::FlowNormalize, y_t, Y_t)
     hasflow = y_t isa NamedTuple && haskey(y_t, :flow)

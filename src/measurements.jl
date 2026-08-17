@@ -49,9 +49,9 @@ partition counts follow `Binomial(total_t, p_t)` with `p_t = 1 - exp(-exp(Y_t))`
 (the Poisson partition law, `Y_t` the log expected copies per partition).
 
 The component is a composition of ecosystem pieces:
-[`TransformObservationModel`](@ref ComposableTuringIDModels.TransformObservationModel)
+`TransformObservationModel`
 applies the cloglog-inverse link to the expected series and
-[`BinomialError`](@ref ComposableTuringIDModels.BinomialError) scores the counts.
+`BinomialError` scores the counts.
 The data contract follows `BinomialError`: `y_t = (y = positives, N = totals)`.
 
 # Fields
@@ -90,11 +90,11 @@ Relative noise is scored with a `LogNormal` whose real-space mean equals the
 expected concentration `Y_t` and whose standard deviation is `σ * Y_t`, so `σ`
 is the CV of the measurement error — matching EpiSewer's `noise_estimate`
 convention. The distribution is built with
-[`reparameterise`](@ref ReparameterisedDistributions.reparameterise) from
+`reparameterise` from
 ReparameterisedDistributions.
 
 `cv` sets the prior for `σ` — a constant `Distribution` or a length-`n`
-process, drawn through the [`as_turing_submodel`](@ref ComposableTuringIDModels.as_turing_submodel) seam like `NormalError`
+process, drawn through the `as_turing_submodel` seam like `NormalError`
 treats its `std` prior.
 
 # Fields

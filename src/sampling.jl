@@ -15,8 +15,8 @@ Outliers are modelled as independent **additive spikes** on the expected series:
 
 The spikes are i.i.d. draws from a generalised extreme value distribution, so
 the component is nothing more than an
-[`Ascertainment`](@ref ComposableTuringIDModels.Ascertainment) over an
-[`IID`](@ref ComposableTuringIDModels.IID) latent process with an additive
+`Ascertainment` over an
+`IID` latent process with an additive
 `transform`. This matches the R package, which adds
 `load_mean * ε_t / flow_median` to the expected concentration
 (`inst/stan/EpiSewer_main.stan`, the `additive outlier component` line) and
