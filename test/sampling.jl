@@ -3,20 +3,30 @@ using TestItemRunner
 
 @testitem "MeasurementOutliers defaults to the EpiSewer GEV spike prior" begin
     using EpiSewer
-    using Distributions: GeneralizedExtremeValue, params, quantile
+    using Distributions: GeneralizedExtremeValue, Truncated, cdf, minimum,
+        params, quantile
     import ComposableTuringIDModels as CT
 
     m = EpiSewer.MeasurementOutliers(CT.NormalError())
     @test m.model isa CT.NormalError
-    @test m.spike isa GeneralizedExtremeValue
-    # R: outliers_estimate(gev_prior_mu = 0, sigma = 2e-8, xi = 4).
-    @test params(m.spike) == (0.0, 2.0e-8, 4.0)
     @test m.scale == 1.0
 
-    # The extreme right tail is the point: a typical day is untouched while the
-    # 99% quantile is below one case-equivalent of load.
-    @test quantile(m.spike, 0.5) < 1.0e-7
-    @test 0.1 < quantile(m.spike, 0.99) < 1.0
+    # Stan declares `vector<lower=0> epsilon` and scores it with an unnormalised
+    # `gev_lpdf`, so the prior it samples is the GEV restricted to [0, Inf).
+    @test m.spike isa Truncated
+    @test m.spike.untruncated isa GeneralizedExtremeValue
+    # R: outliers_estimate(gev_prior_mu = 0, sigma = 2e-8, xi = 4).
+    @test params(m.spike.untruncated) == (0.0, 2.0e-8, 4.0)
+
+    # No negative spikes: an outlier component must not reduce the expected
+    # concentration. Untruncated, 36.8% of the mass would be below zero.
+    @test minimum(m.spike) == 0.0
+    @test cdf(m.spike.untruncated, 0.0) ≈ 0.3679 atol = 1.0e-4
+
+    # The extreme right tail (xi = 4) is what makes sigma = 2e-8 meaningful: a
+    # typical day is untouched, a rare day absorbs a few case-equivalents.
+    @test quantile(m.spike, 0.5) ≈ 2.351e-7 rtol = 1.0e-3
+    @test quantile(m.spike, 0.99) ≈ 3.092 rtol = 1.0e-3
 end
 
 @testitem "MeasurementOutliers composes an Ascertainment over IID" begin

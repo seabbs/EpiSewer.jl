@@ -7,7 +7,7 @@ module EpiSewer
 using Turing: Turing
 using DynamicPPL: @model
 using Distributions: censored, ContinuousDistribution, Gamma,
-    GeneralizedExtremeValue, LogNormal, Normal
+    GeneralizedExtremeValue, LogNormal, Normal, truncated
 using Dates: Date
 using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,

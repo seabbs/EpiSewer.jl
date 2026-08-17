@@ -43,13 +43,26 @@ as possible and implement only the genuine gaps. Most of the mechanically
 distinct parts of EpiSewer — the infection process (`Renewal`), `R_t` smoothing
 (`HilbertSpaceGP` / `RandomWalk`), discrete delays (`LatentDelay`), and
 observation error (`NegativeBinomialError` / `NormalError`) — already have
-composable counterparts. The wastewater-specific pieces (flow normalisation,
-limit-of-detection censoring, dPCR noise, outlier spikes, load-per-case
-calibration) had no direct counterpart in the ecosystem and were implemented as
-small `ComposableTuringIDModels.jl`-compatible `Struct`s (`FlowNormalize`,
-`LOD`, `LogNormalError`, `DigitalPCRError`, `MeasurementOutliers`) — see the
-status column above. Load-per-case calibration reuses `Ascertainment` from the
-ecosystem.
+composable counterparts.
+
+Of the wastewater-specific pieces, two need no new component at all:
+load-per-case calibration is an `Ascertainment`, and the sewer residence time is
+a `LatentDelay` (and by default not even that, since EpiSewer's default
+residence distribution is a point mass at same-day arrival).
+
+The remaining five are small `ComposableTuringIDModels.jl`-compatible `Struct`s,
+and three of them are thin compositions of ecosystem pieces rather than new
+machinery:
+
+- `MeasurementOutliers` is an `Ascertainment` over `IID(truncated(GEV(...)))`
+  with an additive transform.
+- `DigitalPCRError` is a `TransformObservationModel` applying the cloglog-inverse
+  link over a `BinomialError`.
+- `LOD` wraps an inner error model's distribution in `Distributions.censored`.
+
+Only `FlowNormalize` (which reads the daily flow out of the observation-data
+contract) and `LogNormalError` (a relative-noise error family, which the
+ecosystem does not provide) carry logic of their own.
 
 ## Known gaps
 

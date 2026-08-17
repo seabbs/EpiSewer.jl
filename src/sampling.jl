@@ -13,34 +13,41 @@ Outliers are modelled as independent **additive spikes** on the expected series:
 \epsilon_t \sim \text{GEV}(\mu, \sigma, \xi)
 ```
 
-The spikes are i.i.d. draws from a generalised extreme value distribution, so
-the component is nothing more than an
-`Ascertainment` over an
-`IID` latent process with an additive
-`transform`. This matches the R package, which adds
-`load_mean * ε_t / flow_median` to the expected concentration
+The spikes are i.i.d. draws from a generalised extreme value distribution
+truncated at zero, so the component is nothing more than an `Ascertainment` over
+an `IID` latent process with an additive `transform`. This matches the R package,
+which adds `load_mean * ε_t / flow_median` to the expected concentration
 (`inst/stan/EpiSewer_main.stan`, the `additive outlier component` line) and
-scores `ε_t` with `gev_lpdf` under the default prior
-`GEV(μ = 0, σ = 2e-8, ξ = 4)` (`R/model_sampling.R`, `outliers_estimate`).
+scores `ε_t` with `gev_lpdf` under the prior `GEV(μ = 0, σ = 2e-8, ξ = 4)`
+(`R/model_sampling.R`, `outliers_estimate`).
+
+The truncation is not cosmetic. Stan declares `vector<lower=0> epsilon` and
+scores it with an unnormalised `gev_lpdf`, so the distribution it samples is the
+GEV restricted to `[0, ∞)`. The untruncated GEV puts 36.8% of its mass on
+negative spikes — an outlier component that *reduces* the expected concentration
+— which Stan's parameter space forbids outright.
 
 The extreme right tail (`ξ = 4`) is what makes the tiny scale meaningful: the
-median spike is ~1.7e-8 while the 99% quantile is ~0.49, so a typical day is
-untouched and a rare day can absorb up to about half a case-equivalent of load
-before the transmission dynamics have to explain it. Stan declares `ε_t`
-non-negative; here the GEV's own support (`-σ/ξ = -5e-9` upwards) is used
-unaltered, which admits spikes below zero that are ~8 orders of magnitude
-smaller than the 99% quantile.
+median spike is ~2.4e-7 while the 99% quantile is ~3.1, so a typical day is
+untouched and a rare day can absorb a few case-equivalents of load before the
+transmission dynamics have to explain it.
+
+Note that R's own docstring claims the 99% quantile is "below the load
+equivalent of 1 case", which holds for the untruncated GEV (0.49) but not for
+the distribution its Stan code actually samples (3.09). R's documentation and
+R's model disagree here; this follows the model.
 
 # Fields
 - `model`: the wrapped observation model, scoring the spiked expected series.
 - `spike`: the prior on the per-day spike `ε_t`, in units of `scale`.
 - `scale`: the expected-series-unit equivalent of one unit of spike, i.e. the R
   package's `load_mean / flow_median` when the component sits on the
-  concentration scale. Because an `Ascertainment` `transform` cannot see
-  sampled parameters, this is a **construction-time constant**: set it from the
-  load-per-case prior *median* divided by the median flow rather than from the
-  sampled load per case. That approximation fixes the spike's units at the
-  prior median instead of tracking the posterior.
+  concentration scale. Both of those are fixed quantities in Stan — `load_mean`
+  is declared in the data block and `flow_median_log` is transformed data — so a
+  construction-time constant is faithful to R rather than an approximation of
+  it. It is an approximation only relative to *this* package's choice to sample
+  `exp(lpc)`: an `Ascertainment` `transform` cannot see sampled parameters, so
+  set `scale` from the load-per-case prior median over the median flow.
 - `spiked`: the composed `Ascertainment`, built once here rather than inside
   `as_turing_model`. `Ascertainment`'s constructor validates `transform` with
   `hasmethod`, which lowers to a `Core._hasmethod` foreigncall that Mooncake
@@ -91,7 +98,10 @@ end
 
 function MeasurementOutliers(
         model::AbstractObservationModel;
-        spike = GeneralizedExtremeValue(0.0, 2.0e-8, 4.0),
+        # Truncated at zero because Stan declares `vector<lower=0> epsilon` and
+        # scores it with an unnormalised `gev_lpdf`; untruncated, 36.8% of the
+        # prior mass would sit on negative spikes.
+        spike = truncated(GeneralizedExtremeValue(0.0, 2.0e-8, 4.0), 0.0, Inf),
         scale = 1.0,
     )
     return MeasurementOutliers(model, spike, scale)
