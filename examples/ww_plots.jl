@@ -42,7 +42,8 @@ function get_chain()
     data = EpiSewer.example_data()
     y = data.measurements.concentration[WINDOW]
     flow = Vector{Float64}(data.flows.flow[WINDOW])
-    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), length(y))
+    n = length(y) + EpiSewer.observation_lead_in(EpiSewer.model())
+    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), n)
     chn = sample(mdl, NUTS(0.9; max_depth = 12), MCMCThreads(), 60, 2; warmup = 60, progress = false)
     serialize(chainfile, chn)
     return chn
@@ -190,7 +191,10 @@ end
 _expr_data = EpiSewer.example_data()
 _expr_y = _expr_data.measurements.concentration[WINDOW]
 _expr_flow = Vector{Float64}(_expr_data.flows.flow[WINDOW])
-_expr_mdl = as_turing_model(EpiSewer.model(), (y = _expr_y, flow = _expr_flow), length(_expr_y))
+_expr_n = length(_expr_y) + EpiSewer.observation_lead_in(EpiSewer.model())
+_expr_mdl = as_turing_model(
+    EpiSewer.model(), (y = _expr_y, flow = _expr_flow), _expr_n
+)
 
 _gen = _extract_generated(chn, _expr_mdl)
 if !isnothing(_gen)
@@ -258,7 +262,8 @@ if length(key_names) >= 2
     data = EpiSewer.example_data()
     y = data.measurements.concentration[WINDOW]
     flow = Vector{Float64}(data.flows.flow[WINDOW])
-    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), length(y))
+    n = length(y) + EpiSewer.observation_lead_in(EpiSewer.model())
+    mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), n)
     prior_chn = sample(mdl, Prior(), 500; progress = false)
 
     prior_df = DataFrame()

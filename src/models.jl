@@ -29,6 +29,79 @@ end
 
 _delay(model, spec; D = nothing, Δd = 1.0) = LatentDelay(model, spec)
 
+# Lead-in contributed by one component and everything nested inside it. Only a
+# `LatentDelay` contributes; every other wrapper passes through the lead-in of
+# the model it wraps, whatever that child field is called (`model` on the
+# ecosystem's modifiers, `error_model` on `FlowNormalize`), so the walk covers
+# any chain rather than the default one only.
+_lead_in(::Any) = 0
+
+_lead_in(d::LatentDelay) = _delay_length(d.delay) - 1 + _lead_in(d.model)
+
+function _lead_in(obs::AbstractObservationModel)
+    return sum(
+        _lead_in(getfield(obs, f)) for f in fieldnames(typeof(obs)); init = 0
+    )
+end
+
+# Parallel streams (a `Split`'s `streams`): each branch scores its own
+# observations, so the series must be long enough for the longest branch.
+function _lead_in(branches::Union{Tuple, NamedTuple, AbstractVector})
+    models = filter(x -> x isa AbstractObservationModel, collect(branches))
+    return isempty(models) ? 0 : maximum(_lead_in, models)
+end
+
+# Delay PMF length, for each shape `LatentDelay` stores its delay in: a fixed
+# PMF (held reversed), a per-time sequence of PMFs (all the same length), or an
+# `UncertainDelay`, whose PMF length is held constant across draws by its
+# horizon `D` and bin width `Δd`.
+_delay_length(pmf::AbstractVector{<:Real}) = length(pmf)
+_delay_length(pmfs::AbstractVector{<:AbstractVector{<:Real}}) =
+    length(first(pmfs))
+_delay_length(u::UncertainDelay) = length(0.0:u.Δd:(u.D - u.Δd))
+
+function _delay_length(delay)
+    return error(
+        "Cannot determine the delay PMF length of a $(typeof(delay)); " *
+            "`EpiSewer.observation_lead_in` knows the fixed, time-varying and " *
+            "`UncertainDelay` shapes."
+    )
+end
+
+"""
+    observation_lead_in(model) -> Int
+
+Extra leading time points the **infection** series needs so that every
+observation is scored.
+
+Each `LatentDelay` in the chain shortens the expected series by
+`length(pmf) - 1`, dropping the partially observed head of the convolution, and
+the observation-error model then right-aligns the observations against what is
+left. A caller who passes `n = length(y)` to `as_turing_model` therefore leaves
+the first `observation_lead_in(model)` observations silently unscored. Pass
+
+    n = length(y) + EpiSewer.observation_lead_in(mdl)
+
+instead: the expected series comes out at `length(y)` and every observation is
+scored. This is the composable equivalent of the R model's `L + S + D` lead-in.
+
+# Arguments
+- `model`: an `IDModel` (its observation chain is walked) or a bare observation
+  model. The walk sums over the nested `LatentDelay`s — fixed PMF, per-time PMF
+  sequence, or an `UncertainDelay` — so the lead-in is `0` for a chain with no
+  delay, grows if a residence delay is added, and takes the longest branch of a
+  chain that splits into parallel streams.
+
+# Example
+```@example observation_lead_in
+using EpiSewer
+EpiSewer.observation_lead_in(EpiSewer.model())
+```
+"""
+observation_lead_in(mdl::IDModel) = _lead_in(mdl.observation_model)
+
+observation_lead_in(obs::AbstractObservationModel) = _lead_in(obs)
+
 # The default observation chain. The **outermost** wrapper transforms the
 # expected series first, so it is assembled innermost-first here and applies in
 # the order Stan applies it
@@ -97,7 +170,11 @@ import ComposableTuringIDModels: as_turing_model
 d = EpiSewer.example_data()
 y = d.measurements.concentration              # Union{Missing, Float64}, gc/mL
 flow = Vector{Float64}(d.flows.flow)          # mL/day — data
-mdl = as_turing_model(EpiSewer.model(), (y = y, flow = flow), length(y))
+idm = EpiSewer.model()
+# The infection series needs the observation chain's lead-in on top of the
+# observed days, so that every observation is scored (`observation_lead_in`).
+n = length(y) + EpiSewer.observation_lead_in(idm)
+mdl = as_turing_model(idm, (y = y, flow = flow), n)
 chn = sample(mdl, Prior(), 2)
 ```
 """

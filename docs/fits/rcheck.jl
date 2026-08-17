@@ -7,7 +7,9 @@ d = EpiSewer.example_data()
 sub = 1:50
 y = d.measurements.concentration[sub]
 flow = Vector{Float64}(d.flows.flow[sub])
-n = length(y)
+# `n` is the length of the INFECTION series: the observed days plus the
+# observation chain's lead-in, so every observation is scored.
+n = length(y) + EpiSewer.observation_lead_in(EpiSewer.model())
 
 mdl = CT.as_turing_model(EpiSewer.model(), (y = y, flow = flow), n)
 chn = sample(mdl, NUTS(0.9; max_depth = 12), MCMCThreads(), 50, 2; warmup = 50, progress = false)

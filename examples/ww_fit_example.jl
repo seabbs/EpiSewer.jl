@@ -23,6 +23,7 @@ using ComposableTuringIDModels: as_turing_model
 using Turing
 using MCMCChains
 using DataFrames
+using Dates: dayname
 using Random, Serialization
 
 Random.seed!(42)
@@ -30,11 +31,23 @@ Random.seed!(42)
 # Data: example_data() already parses "NA" concentrations to missing, so the
 # concentration column is Union{Missing,Float64} as loaded.
 data = EpiSewer.example_data()
-y_obs = data.measurements.concentration            # 120 days, gc/mL
 flow = Vector{Float64}(data.flows.flow)           # mL/day — data, not a model arg
-n = length(y_obs)
 
-@info "Fitting composable wastewater model" n = n
+# Artificially sparse measurements, as the EpiSewer README example does
+# (`.resources/EpiSewer/README.Rmd`: `weekday %in% c("Monday","Thursday")`):
+# keep only Mondays and Thursdays and blank the rest, so the fit is shown
+# recovering the withheld days. The dense series stays available for the plots.
+sparse_days = dayname.(data.measurements.date) .∈ (["Monday", "Thursday"],)
+y_obs = ifelse.(sparse_days, data.measurements.concentration, missing)
+
+# Each LatentDelay in the chain shortens the expected series, and the
+# observation-error loop right-aligns the observations against what is left, so
+# the infection series needs the chain's lead-in on top of the observed days —
+# otherwise the first `observation_lead_in` observations are never scored (#18).
+n = length(y_obs) + EpiSewer.observation_lead_in(EpiSewer.model())
+
+n_observed = count(!ismissing, y_obs)
+@info "Fitting composable wastewater model" n = n n_observed = n_observed
 
 # --- Model -------------------------------------------------------------------
 # The daily flow is passed through the OBSERVATION-DATA CONTRACT (y = concentrations,

@@ -13,18 +13,25 @@ and sample from the prior:
 
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
+using Dates: dayname
 import ComposableTuringIDModels: as_turing_model
 
 # The example concentration column is already parsed to missing for unobserved
-# days (Union{Missing,Float64}); the series must be longer than the
-# shedding-load PMF (~38 days) for the default observation chain.
+# days (Union{Missing,Float64}).
 d = EpiSewer.example_data()
-y = d.measurements.concentration
 flow = Vector{Float64}(d.flows.flow)   # flow is data
 
+# Artificially sparse measurements (Mondays and Thursdays only), as in the
+# EpiSewer README example: the model fills in the withheld days.
+sparse_days = dayname.(d.measurements.date) .∈ (["Monday", "Thursday"],)
+y = ifelse.(sparse_days, d.measurements.concentration, missing)
+
 mdl = EpiSewer.model()                 # returns an IDModel
+# The infection series carries the observation chain's lead-in on top of the
+# observed days, so that every observation is scored.
+n = length(y) + EpiSewer.observation_lead_in(mdl)
 # Flow is data: pass it through the observation-data contract.
-mdl_t = as_turing_model(mdl, (y = y, flow = flow), length(y))
+mdl_t = as_turing_model(mdl, (y = y, flow = flow), n)
 chn = sample(mdl_t, Prior(), 2)
 ```
 

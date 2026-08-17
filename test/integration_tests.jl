@@ -74,6 +74,103 @@ end
         EpiSewer.LogNormalError
 end
 
+@testitem "observation_lead_in sums the chain's LatentDelay lead-ins" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+    using Distributions
+
+    # Default chain: the incubation (D = 8) and shedding (D = 38) PMFs each
+    # shorten the expected series by `length(pmf) - 1`.
+    @test EpiSewer.observation_lead_in(EpiSewer.model()) == (8 - 1) + (38 - 1)
+
+    # A chain with no delay at all needs no lead-in.
+    obs = EpiSewer.FlowNormalize(EpiSewer.LogNormalError())
+    @test EpiSewer.observation_lead_in(obs) == 0
+    @test EpiSewer.observation_lead_in(
+        EpiSewer.model(observation_model = obs)
+    ) == 0
+
+    # Adding the sewer residence delay lengthens the lead-in by its PMF.
+    res = EpiSewer.model(residence_dist = Gamma(2.0, 1.0), D_residence = 5.0)
+    @test EpiSewer.observation_lead_in(res) == (8 - 1) + (38 - 1) + (5 - 1)
+
+    # An UncertainDelay holds its PMF length constant via `D`/`Δd`.
+    unc = CT.UncertainDelay(
+        LogNormal, [Normal(1.5, 0.4), truncated(Normal(0.4, 0.2), 0, Inf)];
+        D = 20.0
+    )
+    @test EpiSewer.observation_lead_in(
+        CT.LatentDelay(CT.PoissonError(), unc)
+    ) == 20 - 1
+
+    # A time-varying delay: one PMF per time point, all the same length.
+    tv = CT.LatentDelay(CT.PoissonError(), [[0.2, 0.3, 0.5] for _ in 1:5])
+    @test EpiSewer.observation_lead_in(tv) == 3 - 1
+
+    # Parallel streams score their own observations, so the longest branch sets
+    # the lead-in rather than the sum.
+    split = CT.Split(
+        (
+            a = CT.LatentDelay(CT.PoissonError(), [0.5, 0.5]),
+            b = CT.LatentDelay(CT.PoissonError(), [0.2, 0.3, 0.5]),
+        )
+    )
+    @test EpiSewer.observation_lead_in(split) == 3 - 1
+end
+
+@testitem "n = observations + lead-in scores every observation" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+    using Turing
+    using Random
+
+    DPPL = Turing.DynamicPPL
+
+    d = EpiSewer.example_data()
+    mdl = EpiSewer.model()
+    y = d.measurements.concentration
+    flow = Vector{Float64}(d.flows.flow)
+
+    # `n` is the length of the INFECTION series: the observed days plus the
+    # chain's lead-in. Then the expected series comes out at `length(y)`, the
+    # observation-error loop's right-alignment offset is zero, and no
+    # observation is dropped (#18).
+    n = length(y) + EpiSewer.observation_lead_in(mdl)
+    res = CT.as_turing_model(mdl, (y = y, flow = flow), n)()
+    @test length(res.expected_y_t) == length(y)
+    @test length(res.generated_y_t) == length(y)
+    @test length(res.I_t) == n
+
+    # `n = length(y)` — the defect — leaves the lead-in unscored instead.
+    short = CT.as_turing_model(mdl, (y = y, flow = flow), length(y))()
+    @test length(short.expected_y_t) ==
+        length(y) - EpiSewer.observation_lead_in(mdl)
+
+    # The assertion that catches it: perturbing the FIRST observation must move
+    # the log-joint. A dense series is used so that entry is observed rather
+    # than sampled. The log-joint is evaluated at one fixed parameter draw,
+    # reused across the perturbation, so only `y` differs.
+    obs = Vector{Float64}(collect(skipmissing(y))[1:60])
+    f = Vector{Float64}(flow[1:60])
+    perturbed = copy(obs)
+    perturbed[1] = 1.0e9
+
+    function logjoint_at(y_in, n_in, vi)
+        m = CT.as_turing_model(mdl, (y = y_in, flow = f), n_in)
+        vi === nothing && return DPPL.VarInfo(Random.Xoshiro(42), m)
+        return DPPL.logjoint(m, vi)
+    end
+
+    n_full = length(obs) + EpiSewer.observation_lead_in(mdl)
+    vi = logjoint_at(obs, n_full, nothing)
+    @test logjoint_at(obs, n_full, vi) != logjoint_at(perturbed, n_full, vi)
+
+    # With the defect the same perturbation is bit-identical.
+    vi_short = logjoint_at(obs, length(obs), nothing)
+    @test logjoint_at(obs, length(obs), vi_short) ==
+        logjoint_at(perturbed, length(obs), vi_short)
+end
+
 @testitem "Composable model also exercises the FlowNormalize error model in isolation" begin
     using EpiSewer
     import ComposableTuringIDModels as CT

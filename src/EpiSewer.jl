@@ -13,7 +13,7 @@ using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,
     Ascertainment, BinomialError, HalfNormal, IID, LatentDelay,
     NormalError, PriorLike, Renewal, RandomWalk, TransformObservationModel,
-    IDModel
+    UncertainDelay, IDModel
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel,
     generate_observation_error_priors, observation_error
 using EpiAwareADTools: EpiAwareADTools
@@ -33,7 +33,7 @@ include("sewage.jl")
 include("models.jl")
 
 # Public API (not exported — call via EpiSewer.model(), etc.)
-public example_data, model
+public example_data, model, observation_lead_in
 public LogNormalError, LOD, DigitalPCRError, MeasurementOutliers, FlowNormalize
 
 end
