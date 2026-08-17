@@ -19,21 +19,10 @@ using TestItemRunner
     @test extrema(d.measurements.date) == (Date("2022-01-01"), Date("2022-04-30"))
 end
 
-@testitem "example_distributions returns discretised PMFs" begin
-    dist = EpiSewer.example_distributions()
-    @test (:generation_dist, :shedding_dist, :incubation_dist) ⊆ keys(dist)
-    @test length(dist.generation_dist) == 15
-    @test length(dist.shedding_dist) == 38
-    @test length(dist.incubation_dist) == 8
-    @test dist.generation_dist isa Vector{Float64}
-    @test all(>=(0), dist.generation_dist)
-    @test all(>=(0), dist.shedding_dist)
-    @test all(>=(0), dist.incubation_dist)
-end
-
-@testitem "example data and distributions are public but not exported" begin
+@testitem "example data is public but not exported" begin
     @test Base.ispublic(EpiSewer, :example_data)
-    @test Base.ispublic(EpiSewer, :example_distributions)
     @test !Base.isexported(EpiSewer, :example_data)
-    @test !Base.isexported(EpiSewer, :example_distributions)
+    # The hand-built PMF helper is gone: distributions go straight to the
+    # components, which discretise them.
+    @test !isdefined(EpiSewer, :example_distributions)
 end

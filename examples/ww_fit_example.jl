@@ -5,7 +5,9 @@
 #   - data: Zurich SARS-CoV-2 wastewater example (example_data())
 #   - model: EpiSewer.model() — an IDModel composing
 #       Renewal(generation_time, rt = RandomWalk())  (core)
-#       Ascertainment(LatentDelay(FlowNormalize(LogNormalError), shed), lpc)
+#       LatentDelay(
+#           Ascertainment(LatentDelay(FlowNormalize(LogNormalError), shed), lpc),
+#           incubation)
 #   - inference: Hamiltonian MCMC via Turing NUTS, 2 chains on 2 threads.
 #
 # Run from the package root, in the docs environment (the package itself does not

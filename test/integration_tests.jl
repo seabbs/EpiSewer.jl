@@ -7,6 +7,7 @@ using TestItemRunner
 #
 # The model mirrors the EpiSewer README example:
 #   Renewal (generation time, R_t ~ RandomWalk)   -> infections I_t
+#   LatentDelay (incubation period)               -> symptom onsets
 #   Ascertainment (per-case shed load)            -> expected load
 #   LatentDelay (shedding-load PMF)               -> delayed load
 #   FlowNormalize(LogNormalError())               -> observed concentrations
@@ -27,8 +28,8 @@ using TestItemRunner
     d = EpiSewer.example_data()
     conc = _parse_conc.(d.measurements.concentration)
 
-    # Subsample for a lightweight test (LatentDelay truncates the expected
-    # series by the shedding PMF length, so n must exceed it).
+    # Subsample for a lightweight test (each LatentDelay truncates the expected
+    # series by its PMF length, so n must exceed their total).
     sub = 5:64
     n = length(sub)
     y_obs = Vector{Union{Missing, Float64}}(conc[sub])
@@ -47,7 +48,8 @@ using TestItemRunner
 
     @test size(chn, 1) == 2
     @test n == length(y_obs)
-    @test n > length(EpiSewer.example_distributions().shedding_dist)
+    # The incubation (8) and shedding (38) PMFs both truncate the series.
+    @test n > 8 + 38
 end
 
 @testitem "EpiSewer.model defaults build on the full example data" begin
@@ -58,15 +60,18 @@ end
     mdl = EpiSewer.model()  # no flow argument: flow is data
 
     @test mdl isa CT.IDModel
-    # The default observation chain is Ascertainment(LatentDelay(FlowNormalize(
-    # LogNormalError()))): load-per-case scaling, shedding delay, and the thin
-    # flow division innermost. The thin FlowNormalize carries no flow; flow
-    # reaches the model through the observation-data contract at
+    # The default observation chain is LatentDelay(Ascertainment(LatentDelay(
+    # FlowNormalize(LogNormalError())))): the incubation delay outermost (it
+    # transforms I_t first), then load-per-case scaling, the shedding delay, and
+    # the thin flow division innermost. The thin FlowNormalize carries no flow;
+    # flow reaches the model through the observation-data contract at
     # as_turing_model time.
-    @test mdl.observation_model isa CT.Ascertainment
-    @test mdl.observation_model.model isa CT.LatentDelay
-    @test mdl.observation_model.model.model isa EpiSewer.FlowNormalize
-    @test mdl.observation_model.model.model.error_model isa EpiSewer.LogNormalError
+    @test mdl.observation_model isa CT.LatentDelay
+    @test mdl.observation_model.model isa CT.Ascertainment
+    @test mdl.observation_model.model.model isa CT.LatentDelay
+    @test mdl.observation_model.model.model.model isa EpiSewer.FlowNormalize
+    @test mdl.observation_model.model.model.model.error_model isa
+        EpiSewer.LogNormalError
 end
 
 @testitem "Composable model also exercises the FlowNormalize error model in isolation" begin
@@ -157,8 +162,9 @@ end
     mdl_override = EpiSewer.model(infection_model = inf)
     @test mdl_override isa CT.IDModel
     @test mdl_override.infection_model === inf
-    @test mdl_override.observation_model isa CT.Ascertainment
-    @test mdl_override.observation_model.model.model isa EpiSewer.FlowNormalize
+    @test mdl_override.observation_model isa CT.LatentDelay
+    @test mdl_override.observation_model.model.model.model isa
+        EpiSewer.FlowNormalize
 end
 
 @testitem "EpiSewer.model accepts a custom infection model as default-arg override" begin
@@ -176,6 +182,6 @@ end
     @test mdl isa CT.IDModel
     @test mdl.infection_model === inf
     # The default observation chain is still assembled.
-    @test mdl.observation_model isa CT.Ascertainment
-    @test mdl.observation_model.model.model isa EpiSewer.FlowNormalize
+    @test mdl.observation_model isa CT.LatentDelay
+    @test mdl.observation_model.model.model.model isa EpiSewer.FlowNormalize
 end

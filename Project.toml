@@ -8,7 +8,6 @@ projects = ["test", "docs"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-CensoredDistributions = "b2eeebe4-5992-4301-9193-7ebc9f62c855"
 ComposableTuringIDModels = "cbebd14a-101c-4997-a79f-d008ad7c07b2"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -20,7 +19,6 @@ Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 
 [compat]
 CSV = "0.10.16"
-CensoredDistributions = "0.2.22"
 ComposableTuringIDModels = "0.1.2"
 DataFrames = "1.8.2"
 Dates = "1.11.0"

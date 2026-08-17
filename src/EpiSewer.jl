@@ -6,10 +6,9 @@ module EpiSewer
 
 using Turing: Turing
 using DynamicPPL: @model
-using Distributions: censored, Gamma, GeneralizedExtremeValue, LogNormal,
-    Normal, pdf, truncated
+using Distributions: censored, ContinuousDistribution, Gamma,
+    GeneralizedExtremeValue, LogNormal, Normal
 using Dates: Date
-using CensoredDistributions: CensoredDistributions, double_interval_censored
 using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,
     Ascertainment, BinomialError, HalfNormal, IID, LatentDelay,
@@ -34,7 +33,7 @@ include("sewage.jl")
 include("models.jl")
 
 # Public API (not exported — call via EpiSewer.model(), etc.)
-public example_data, example_distributions, model
+public example_data, model
 public LogNormalError, LOD, DigitalPCRError, MeasurementOutliers, FlowNormalize
 
 end

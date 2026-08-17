@@ -80,8 +80,9 @@ The wastewater model is assembled as a composable
 `ComposableTuringIDModels.IDModel` via the public (but not exported)
 front end `EpiSewer.model(...)`. The default assembly replicates the EpiSewer
 README example — a `Renewal` infection process with a random-walk `R_t`,
-composed with the shedding delay, load-per-case scaling, flow normalization,
-and observation noise — and can be evaluated on the example data directly:
+composed with the incubation delay, load-per-case scaling, the shedding delay,
+flow normalization, and observation noise — and can be evaluated on the
+example data directly:
 
 ```julia
 using EpiSewer, ComposableTuringIDModels, Turing
@@ -89,7 +90,8 @@ import ComposableTuringIDModels: as_turing_model
 
 # The example concentration column is already parsed to missing for unobserved
 # days, so it loads as a Union{Missing,Float64} series. The series must be
-# longer than the shedding-load PMF (>=9.0 days, the LatentDelay lower bound).
+# longer than the incubation and shedding-load PMFs combined (46 days), since
+# each LatentDelay truncates the expected series by its PMF length.
 d = EpiSewer.example_data()
 y = d.measurements.concentration            # 120 days of (gc/mL) concentrations
 flow = Vector{Float64}(d.flows.flow)        # daily flow (mL/day) — data
