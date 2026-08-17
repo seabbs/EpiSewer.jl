@@ -12,9 +12,8 @@ using Dates: Date
 using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,
     AbstractRenewalModifier, Ascertainment, BinomialError,
-    CombineLatentModels, FixedIntercept,
-    HalfNormal, HilbertSpaceGP, IID, LatentDelay, Matern32Kernel,
-    NormalError, PriorLike, Renewal, RandomWalk, TransformObservationModel,
+    CombineLatentModels, HalfNormal, HilbertSpaceGP, IID, LatentDelay, Matern32Kernel,
+    NormalError, PriorLike, Renewal, TransformObservationModel,
     UncertainDelay, IDModel
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel,
     generate_observation_error_priors, observation_error,

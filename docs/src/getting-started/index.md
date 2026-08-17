@@ -152,8 +152,36 @@ sds = sqrt.(expectations .* (1 .+ expectations .* ξ^2))
 Poisson variance dominates at low incidence and the overdispersion dominates at
 high, so the relative spread falls towards `ξ` as infections grow.
 
+That relative spread carries a soft upper limit, because it runs the other way
+too: it diverges as the expectation approaches zero, which would give an
+arbitrarily small expectation an arbitrarily wide draw.
+
+```@example gs
+tiny = 1.0e-6
+(
+    cv_cap = noise.cv_cap,
+    relative_sd_here = round.(sds ./ expectations; digits = 3),
+    relative_sd_at_1e_6 = round(sqrt(1 / tiny + ξ^2); digits = 1),
+)
+```
+
+Every expectation in the table sits well below the limit, so it is inactive and
+the moments above hold exactly. At an expectation of `1e-6` the uncapped relative
+spread would be the number on the last line, and the limit is what holds it to
+`cv_cap` instead.
+
+The family the moments are matched to is an argument, so the draw can be any
+distribution the ecosystem can reparameterise by its mean and standard
+deviation. The default is a `LogNormal`, which keeps infections positive
+whatever the sampler proposes; `dist = Normal` gives the R package's linear
+form.
+
+```@example gs
+(default_family = EpiSewer.InfectionNoise().dist,)
+```
+
 The parameterisation is non-centred: the sampled quantity is a standard normal
-per day, and the scale is applied afterwards.
+per day, and the location and scale are applied afterwards.
 `InfectionNoiseDraws` is what the modifier resolves to once those normals are
 drawn, and it is what the renewal scan steps through.
 
@@ -161,7 +189,8 @@ drawn, and it is what the renewal scan steps through.
 using Random: randn
 
 resolved = EpiSewer.InfectionNoiseDraws(
-    randn(MersenneTwister(1), length(expectations)), ξ
+    randn(MersenneTwister(1), length(expectations)),
+    noise.dist, ξ, noise.cv_cap, noise.cv_sharpness,
 )
 
 function noisy_infections(mod, expectations)

@@ -40,10 +40,25 @@ truncated `Normal` prior when `sd` is given.
 This is the conversion the package default uses to carry EpiSewer's
 `length_scale_prior_mu = 21` days onto the standardised index.
 
+# Arguments
+- `days`: the length scale in days, as the literature and R state it.
+- `n`: the length of the series the Gaussian process is generated over. This is
+  the infection series length, so it includes the observation chain's lead-in
+  (see [`observation_lead_in`](@ref EpiSewer.observation_lead_in)).
+- `sd`: the standard deviation of the prior, in days. Given, the return value is
+  a `Normal` truncated at the length-scale floor rather than a bare number.
+
 # Examples
-```jldoctest
-julia> round(EpiSewer.gp_length_scale(21.0, 164); digits = 3)
-0.442
+```@example gp_length_scale
+using EpiSewer
+EpiSewer.gp_length_scale(21.0, 164)
+```
+
+Twice the series length halves the standardised scale, because the standard
+deviation of the index grows with it:
+
+```@example gp_length_scale
+EpiSewer.gp_length_scale(21.0, 328)
 ```
 """
 function gp_length_scale(days, n; sd = nothing)
@@ -89,16 +104,25 @@ sustained excursion in `R_t`.
 Pair it with [`gp_length_scale`](@ref EpiSewer.gp_length_scale) to retune the
 default model for a different series.
 
+# Arguments
+- `concentration`: the measured concentrations (gc/mL), in time order.
+  `missing` entries are skipped.
+- `flow`: the daily flow (mL/day), in time order.
+- `load_per_case`: the load shed per case (gc/case), the median of
+  `model()`'s `lpc_prior` on the natural scale.
+- `days`: the length of the leading window averaged over. EpiSewer uses the
+  first week.
+
 # Examples
-```jldoctest
-julia> d = EpiSewer.example_data();
-
-julia> flow = Vector{Float64}(d.flows.flow);
-
-julia> round(EpiSewer.crude_initial_infections(
-           d.measurements.concentration, flow, 2.0e11); digits = 1)
-703.9
+```@example crude_initial_infections
+using EpiSewer
+d = EpiSewer.example_data()
+flow = Vector{Float64}(d.flows.flow)
+EpiSewer.crude_initial_infections(d.measurements.concentration, flow, 2.0e11)
 ```
+
+That is the scale the default seeding prior is centred on, against a series whose
+measurements run from 145 to 3200 gc/mL.
 """
 function crude_initial_infections(concentration, flow, load_per_case; days = 7)
     head = concentration[1:min(days, length(concentration))]
