@@ -110,28 +110,12 @@ _transformed_dpcr(m::DigitalPCRError) = TransformObservationModel(
     return (; y_t = inner.y_t, expected = inner.expected)
 end
 
-# The partition totals are folded into the data here, and the result is narrowed
-# by `concrete_observations` before it reaches the submodel.
-#
-# The narrowing is what makes a `missing` count safe. `BinomialError`'s data is
-# a `NamedTuple`, and an array inside a `NamedTuple` argument is not something
-# DynamicPPL sees as a model argument: the scoring loop's `~` then writes the
-# imputed draw straight into the caller's vector and registers no `y_t`
-# parameter at all, so every evaluation after the first scores that draw as data
-# (EpiAware/ComposableTuringIDModels.jl#264). Narrowing splits the vector into a
-# `MissingObservations` carrier instead, whose scoring path copies the values and
-# assumes the absent ones. Because this component always builds the `NamedTuple`
-# itself, the hazard applies whatever the caller passes, so the guard belongs
-# here rather than on the caller.
-#
-# It sits outside the `@model` body, as `as_turing_model(::IDModel, ...)` does,
-# so it runs once per model rather than once per log-density evaluation and
-# stays off the differentiated path. Re-narrowing already-narrowed data returns
-# the same objects, so the `IDModel` path applying it first costs nothing.
-#
-# Called qualified because `concrete_observations` is documented upstream but not
-# declared public, and the quality suite rejects an explicit import of a
-# non-public name.
+# Narrow the data before it reaches the submodel. An array inside a `NamedTuple`
+# argument is not a model argument to DynamicPPL, so without this the scoring
+# loop writes an imputed draw into the caller's vector and scores it as data on
+# every later evaluation (ComposableTuringIDModels#264). Narrowing splits it into
+# a `MissingObservations` carrier instead. It sits outside the `@model` so it
+# runs once per model rather than once per gradient.
 function as_turing_model(m::DigitalPCRError, y_t, Y_t)
     y = y_t isa NamedTuple ? merge(y_t, (N = m.total_partitions,)) :
         (y = y_t, N = m.total_partitions)
@@ -194,39 +178,22 @@ LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
 @model function generate_observation_error_priors(
         obs_model::LogNormalError, y_t, Y_t
     )
-    # `cv` is the accurate name for a coefficient of variation, and it also keeps
-    # this parameter clear of the bare `σ` the Gaussian-process latent models use
-    # for their marginal standard deviation. Prefixing resolves that collision
-    # too — a `PrefixLatentModel`, or a `CombineLatentModels`, which prefixes its
-    # components automatically — so this is naming rather than a workaround.
+    # Sampled as `cv`, which is what a coefficient of variation is.
     cv ~ as_turing_submodel(obs_model.cv, length(Y_t); prefix = true)
     return (; cv = cv)
 end
 
 function observation_error(::LogNormalError, Y_t, σ)
-    # Three guards covering disjoint failures, all reachable from a diverging
-    # sampler.
-    #
-    # A non-finite `Y_t` or `σ` returns a plain `LogNormal` sentinel, whose
-    # `logcdf` is `-Inf` as well as its `logpdf`. That is what keeps the result
-    # safe to left-censor in `LOD`: a censored distribution's boundary term is a
-    # `logcdf`, and `Reparameterised` guards only `logpdf`/`pdf`, routing
-    # `logcdf` through `native`, which throws (see the boundary test).
-    # A bare `Float64` `-Inf` is deliberate here — giving the sentinel the
-    # input's type instead makes AD return a `NaN` partial rather than `0.0`.
+    # Three guards, all reachable from a diverging sampler. The sentinel's
+    # `logcdf` is `-Inf` as well as its `logpdf`, which keeps it safe to
+    # left-censor in `LOD`. A bare `Float64` `-Inf` is deliberate: giving the
+    # sentinel the input's type makes AD return `NaN` rather than `0.0`.
     isfinite(Y_t) && isfinite(σ) || return LogNormal(Inf, 1.0)
-    # An enormous but finite coefficient of variation. The log-scale conversion
-    # is `s² = log1p((sd / mean)²)`, and `sd / mean` is exactly `σ` here, so
-    # `σ²` overflows to `Inf` once `σ` passes `sqrt(floatmax)` ≈ 1.3e154 — and
-    # `Inf` reaches the constructor as a valid-looking argument rather than as a
-    # non-finite one, so the guard above does not catch it. Sampling a `missing`
-    # observation calls `rand`, which validates through `native` and throws,
-    # so an extreme proposal has to be turned into `-Inf` here rather than
-    # rejected downstream.
+    # `s² = log1p(σ²)` overflows once `σ` passes `sqrt(floatmax)`, and the
+    # resulting `Inf` looks like a valid argument to the guard above. Sampling a
+    # `missing` observation calls `rand`, which would then throw.
     σ < sqrt(floatmax(Float64)) || return LogNormal(Inf, 1.0)
-    # Finite but invalid moments (`Y_t <= 0`, `σ <= 0`) reach `Reparameterised`,
-    # whose `logpdf` scores them `-Inf` at the input's own type. `check_args =
-    # false` is what routes us there: the checking constructor validates the
-    # moments and would throw a `DomainError` mid-gradient instead.
+    # `check_args = false` routes invalid moments to a `-Inf` score rather than
+    # a `DomainError` mid-gradient.
     return reparameterise(LogNormal; mean = Y_t, sd = σ * Y_t, check_args = false)
 end

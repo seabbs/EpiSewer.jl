@@ -228,23 +228,14 @@ function crude_initial_infections(concentration, flow, load_per_case; days = 7)
     return 0.1 + c * (sum(q) / length(q)) / load_per_case
 end
 
-# EpiSewer's default `R_t` prior: the **sum** of a short-term and a long-term
-# Hilbert-space approximate Gaussian process (`R_estimate_gp()`, R's
-# `model_infections()` default). The scale-free settings transfer exactly — the
-# Matérn 3/2 kernel (`matern_nu = c(3/2, ...)`), the boundary factor
-# (`boundary_factor = 3`) and both magnitude priors, which are in log-`R_t` units
-# either way.
+# EpiSewer's `R_estimate_gp()`: the sum of a short-term and a long-term
+# Matérn-3/2 Hilbert-space GP. Both are needed — the long-term magnitude (0.25)
+# is twice the short-term one, so it carries most of the prior variability.
+# `CombineLatentModels` sums them and prefixes each term's variables.
 #
-# Both terms are needed rather than the short one alone: the long-term magnitude
-# (0.25) is twice the short-term one (0.125), so it carries most of the prior
-# variability in `R_t`. `CombineLatentModels` sums them and prefixes each term's
-# variables, which is also what keeps their `σ` and `ℓ` distinct.
-#
-# The length scales do not transfer directly: R states them in days, and
-# `HilbertSpaceGP` standardises the index, so they depend on the series length.
-# `n` is not known when the model is assembled, so the default converts R's
-# priors at the length of the example series; `gp_length_scale` does the
-# conversion for a materially different one.
+# The magnitudes and kernel transfer directly; the length scales do not, because
+# R states them in days and `HilbertSpaceGP` standardises the index. `n` sets the
+# series length that conversion assumes; see `gp_length_scale`.
 function _default_rt(; n = 164, m = 20)
     short = HilbertSpaceGP(
         length_scale = gp_length_scale(
@@ -273,22 +264,10 @@ function _default_rt(; n = 164, m = 20)
     return TransformLatentModel(combined, softplus_link)
 end
 
-# Compose one delay onto an observation model. `LatentDelay`'s discretisation
-# keywords exist only on its continuous-distribution constructor — a PMF vector
-# is used as given, and an `UncertainDelay` (or any other prior model) carries
-# its own horizon — so `D`/`Δd` are forwarded only where they are accepted.
-# `nothing` means no convolution at all, which is the right default for the
-# sewer residence time: EpiSewer's `residence_dist = c(1)`
-# (`.resources/EpiSewer/R/EpiSewer.R`) is a point mass at same-day arrival, i.e.
-# an identity convolution.
-# Assemble the infection process: a `Renewal` with `rt` as its `R_t` prior, and
-# the stochastic-infection modifier composed onto its step.
-#
 # `Renewal` discretises a continuous generation time in its keyword constructor
-# and takes modifiers only in its positional one, which needs an already
-# discretised interval. Building the deterministic model first and re-assembling
-# it from its own `gen_int` keeps one discretisation path rather than
-# discretising again here (ComposableTuringIDModels issue #269).
+# but takes modifiers only in its positional one, which needs a discretised
+# interval. Re-assembling from the deterministic model's own `gen_int` keeps one
+# discretisation path (ComposableTuringIDModels#269).
 function _infection_model(generation_time, rt, noise, initialisation; D_gen, Δd)
     base = Renewal(;
         generation_time = generation_time, rt = rt,
@@ -307,6 +286,10 @@ function _infection_model(generation_time, rt, noise, initialisation; D_gen, Δd
     )
 end
 
+# Compose one delay onto an observation model. `D`/`Δd` are forwarded only to
+# the continuous-distribution constructor, the only one that accepts them.
+# `nothing` omits the convolution, which is R's default for the sewer residence
+# time (`residence_dist = c(1)`, a point mass at same-day arrival).
 _delay(model, ::Nothing; D = nothing, Δd = 1.0) = model
 
 function _delay(model, dist::ContinuousDistribution; D, Δd = 1.0)
@@ -393,10 +376,8 @@ observation_lead_in(mdl::IDModel) = _lead_in(mdl.observation_model)
 
 observation_lead_in(obs::AbstractObservationModel) = _lead_in(obs)
 
-# The default observation chain. The **outermost** wrapper transforms the
-# expected series first, so it is assembled innermost-first here and applies in
-# the order Stan applies it
-# (`.resources/EpiSewer/inst/stan/EpiSewer_main.stan`):
+# The default observation chain, assembled innermost-first so the outermost
+# wrapper transforms the expected series first, in Stan's order:
 #
 #   incubation  `lambda = convolve(inc_rev, I)`
 #   load/case   per-case shed load, folded into `omega`

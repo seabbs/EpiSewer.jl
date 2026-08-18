@@ -1,23 +1,11 @@
 # Infection components: stochastic infections (`infection_noise_estimate`).
 
-# The non-centred draw: map a standard normal onto the family whose mean and
-# standard deviation are the negative binomial's.
-#
-# `reparameterise` is ReparameterisedDistributions' caller-facing verb — it
-# returns a `Distribution` parameterised by its moments, converts to the native
-# family through an exact closed form, and stays differentiable. (`to_native` is
-# the family-registration hook rather than the API to call.) `check_args = false`
-# routes an invalid moment pair to a `-Inf` score instead of a `DomainError`
-# mid-gradient.
-#
-# The two location-scale families are written out rather than routed through it,
-# for two reasons. The generic path round-trips through `cdf` and `quantile`,
-# which loses the tails: a draw five standard deviations out underflows `cdf` to
-# zero and comes back as the support's endpoint, and a sampler does reach five
-# standard deviations. And it constructs a distribution per time step inside the
-# differentiated scan, which is 164 allocations per gradient on the example
-# series. `test/infections.jl` asserts the closed forms agree with the generic
-# path to a relative tolerance of 1e-12.
+# Map a standard normal onto the family whose moments are the negative
+# binomial's. `reparameterise` is ReparameterisedDistributions' caller-facing
+# verb; `check_args = false` scores an invalid moment pair `-Inf` rather than
+# throwing mid-gradient. The two location-scale families are written out because
+# the generic path allocates a distribution per step inside the differentiated
+# scan and loses the tails through a `cdf`/`quantile` round trip.
 function _draw(::Type{LogNormal}, mean, sd, z)
     σ² = log1p((sd / mean)^2)
     return exp(log(mean) - σ² / 2 + z * sqrt(σ²))
@@ -69,26 +57,15 @@ round-trip through ``\Phi``:
 I_t = \iota_t + \tilde{I}_t \, c_t \iota_t \qquad (\texttt{Normal})
 ```
 
-The default `LogNormal` keeps infections **positive by construction**, so no
-truncation is needed and no proposal can drive the expected concentration
-negative: ``I_t = \exp(\cdot) > 0`` always, and ``\iota_t`` is a positive
-combination of positive infections, so ``\log \iota_t`` and ``\sigma_t`` are
-always defined. `Normal` is R's own choice and reproduces it exactly, but is only
-non-negative because R declares `vector<lower=0> I` and truncates
-(`inst/stan/EpiSewer_main.stan`: `I ~ normal(iota, ...) T[0, ]`); reached through
-this modifier it has no such bound, and a negative expected concentration is an
-error rather than a rejected proposal in a log-normal measurement model.
+The default `LogNormal` keeps infections positive by construction, so no
+truncation is needed. `Normal` is R's own choice, but R bounds it
+(`I ~ normal(iota, ...) T[0, ]`) and this modifier cannot, so it can produce a
+negative expected concentration.
 
 ``c_t`` is the coefficient of variation ``\sqrt{1/\iota_t + \xi^2}`` under a
-smooth upper limit, ``u - \mathrm{softplus}(u - c, k)`` with ``u`` = `cv_cap` and
-``k`` = `cv_sharpness`. The limit tracks ``c`` closely well below ``u`` and
-saturates above it, so the moments hold wherever it is inactive. Without it the
-coefficient of variation diverges as ``\iota_t`` approaches zero, giving an
-arbitrarily small expectation an arbitrarily wide draw. R applies the same limit
-with the same constants
-(`soft_upper(sqrt(iota .* (1 + iota * I_xi^2)) ./ iota, 0.5, 10)`), which is why
-its own comment calls the result an approximation to a negative binomial. Setting
-`cv_cap = Inf` restores the exact negative-binomial variance.
+smooth upper limit ``u - \mathrm{softplus}(u - c, k)``, which holds it finite as
+``\iota_t`` approaches zero. R applies the same limit with the same constants.
+`cv_cap = Inf` removes it and restores the exact variance.
 
 The parameterisation is **non-centred**: the sampled quantity is the standard
 normal ``\tilde{I}_t`` and the location and scale are applied afterwards. This is
@@ -98,23 +75,6 @@ priors resolve before the scan, so a modifier cannot draw ``I_t`` conditional on
 
 Because the modified incidence is what the renewal scan feeds forward, the noise
 compounds through the process rather than perturbing each day in isolation.
-
-# Effect on sampling
-The noise earns its parameters. Measured on the thinned example series, 100
-warmup + 100 draws under `NUTS(0.9)` with Mooncake, against the same model with
-`infection_noise = nothing`:
-
-| infection noise | mean tree depth | divergences |
-|:---|---:|---:|
-| none | 3.50 | 85 |
-| this component | 10.00 | 0 |
-
-A deterministic renewal makes every observation an exact function of ``R_t`` and
-the seeding, and that stiffness is what the divergences are. The cost is
-trajectory length: maximum tree depth, so 1024 leapfrog steps an iteration. R
-reaches zero divergences *and* zero maximum-treedepth hits, and the difference
-there is the centred parameterisation its Stan code can express and a modifier
-cannot.
 
 # Fields
 - `dist`: the noise family, matched to the negative-binomial moments. Defaults to
@@ -189,18 +149,10 @@ end
 # per-time modifier carries the index it has reached. The window is unused.
 modifier_init_state(::InfectionNoiseDraws, window) = 0
 
-# R's `softplus(x, k) = log1p_exp(k x) / k` and
-# `soft_upper(x, u, k) = u - softplus(u - x, k)`
-# (`.resources/EpiSewer/inst/stan/functions/link.stan`): a smooth limit that
-# tracks `x` well below `u` and saturates at `u` above it.
-#
-# An infinite limit is no limit: taken literally it would give `Inf - Inf`, so
-# the uncapped case returns `x`. `u` and `k` are construction-time constants, so
-# this branch is never on a differentiated value.
-# Numerically stable: the naive `log1p(exp(k x)) / k` overflows to `Inf` once
-# `k x` passes about 709, and both the `R_t` link and the load-variation floor
-# see values well beyond that on a diverging proposal. This form is exact and
-# saturates to `x` instead.
+# R's `soft_upper(x, u, k) = u - softplus(u - x, k)`
+# (`inst/stan/functions/link.stan`). Written in the stable form because
+# `log1p(exp(k x)) / k` overflows once `k x` passes about 709, which a diverging
+# proposal reaches. An infinite limit is no limit, so it returns `x`.
 _softplus(x, k) = (k * x > 0 ? x : zero(x)) + log1p(exp(-abs(k * x))) / k
 _soft_upper(x, u, k) = isfinite(u) ? u - _softplus(u - x, k) : x
 
