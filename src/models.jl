@@ -30,6 +30,9 @@ Returns a `NamedTuple` ready to splat into [`model`](@ref EpiSewer.model):
   this from the case counts rather than assuming it (`load_per_case_calibrate()`
   is its default), and 1.1e11 gc/case is what its `suggest_load_per_case` returns
   for this series.
+- `outlier_scale`: the concentration-scale size of one unit of outlier spike,
+  R's `load_mean / flow_median`. That is 1.1e11 gc/case over this series' median
+  flow of 1.545e11 mL/day.
 - `initial_infections`: the crude seeding estimate, from
   [`crude_initial_infections`](@ref EpiSewer.crude_initial_infections) on the
   thinned series at that load per case. Matches R's `initial_cases_crude` to
@@ -48,6 +51,7 @@ example_assumptions() = (
     incubation_dist = Gamma(8.5, 0.4),
     lpc_prior = Normal(log(1.1e11), 0.5),
     initial_infections = 912.9,
+    outlier_scale = 0.7119,
 )
 
 # EpiSewer's `R_estimate_gp()` priors, in days
@@ -401,12 +405,19 @@ observation_lead_in(obs::AbstractObservationModel) = _lead_in(obs)
 #   flow        `kappa_log = pi_log - flow_log`
 function _observation_model(
         lpc_prior; shedding_dist, incubation_dist, residence_dist,
-        D_shedding, D_incubation, D_residence, Δd
+        D_shedding, D_incubation, D_residence, Δd, outlier_scale, load_cv
     )
-    obs = FlowNormalize(LogNormalError())
+    # Outliers sit immediately inside the flow division, so the spike lands on
+    # the concentration scale where Stan adds it.
+    inner = isnothing(outlier_scale) ? LogNormalError() :
+        MeasurementOutliers(LogNormalError(); scale = outlier_scale)
+    obs = FlowNormalize(inner)
     obs = _delay(obs, residence_dist; D = D_residence, Δd = Δd)
     obs = _delay(obs, shedding_dist; D = D_shedding, Δd = Δd)
     obs = Ascertainment(obs, lpc_prior)
+    # Individual-level load variation applies to the shedding-onset series,
+    # before the per-case load scaling, as `zeta_log` does in Stan.
+    isnothing(load_cv) || (obs = LoadVariation(obs; cv = load_cv))
     return _delay(obs, incubation_dist; D = D_incubation, Δd = Δd)
 end
 
@@ -506,6 +517,8 @@ function model(;
         rt = _default_rt(; n = n_gp),
         infection_noise = InfectionNoise(),
         initial_infections,
+        outlier_scale = nothing,
+        load_cv = 1.0,
         seeding = Normal(log(initial_infections), _SEEDING_SPREAD),
         infection_model = _infection_model(
             generation_time, rt, infection_noise, seeding;
@@ -520,6 +533,8 @@ function model(;
             D_incubation = D_incubation,
             D_residence = D_residence,
             Δd = Δd,
+            outlier_scale = outlier_scale,
+            load_cv = load_cv,
         ),
     )
     return IDModel(infection_model, observation_model)

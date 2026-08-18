@@ -29,6 +29,7 @@ include("data.jl")
 
 # --- Model components ---
 include("infections.jl")
+include("shedding.jl")
 include("measurements.jl")
 include("sampling.jl")
 include("sewage.jl")
@@ -40,6 +41,6 @@ include("models.jl")
 public example_data, example_assumptions, model, observation_lead_in
 public gp_length_scale, crude_initial_infections, softplus_link
 public LogNormalError, LOD, DigitalPCRError, MeasurementOutliers, FlowNormalize
-public InfectionNoise, InfectionNoiseDraws
+public InfectionNoise, InfectionNoiseDraws, LoadVariation
 
 end

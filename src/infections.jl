@@ -204,7 +204,11 @@ modifier_init_state(::InfectionNoiseDraws, window) = 0
 # An infinite limit is no limit: taken literally it would give `Inf - Inf`, so
 # the uncapped case returns `x`. `u` and `k` are construction-time constants, so
 # this branch is never on a differentiated value.
-_softplus(x, k) = log1p(exp(k * x)) / k
+# Numerically stable: the naive `log1p(exp(k x)) / k` overflows to `Inf` once
+# `k x` passes about 709, and both the `R_t` link and the load-variation floor
+# see values well beyond that on a diverging proposal. This form is exact and
+# saturates to `x` instead.
+_softplus(x, k) = (k * x > 0 ? x : zero(x)) + log1p(exp(-abs(k * x))) / k
 _soft_upper(x, u, k) = isfinite(u) ? u - _softplus(u - x, k) : x
 
 function apply_modifier(mod::InfectionNoiseDraws, incidence, t)

@@ -30,11 +30,12 @@ using TestItemRunner
     # flow reaches the model through the observation-data contract at
     # as_turing_model time.
     @test mdl.observation_model isa CT.LatentDelay
-    @test mdl.observation_model.model isa CT.Ascertainment
-    @test mdl.observation_model.model.model isa CT.LatentDelay
-    @test mdl.observation_model.model.model.model isa EpiSewer.FlowNormalize
-    @test mdl.observation_model.model.model.model.error_model isa
-        EpiSewer.LogNormalError
+    @test mdl.observation_model.model isa EpiSewer.LoadVariation
+    @test mdl.observation_model.model.model isa CT.Ascertainment
+    @test mdl.observation_model.model.model.model isa CT.LatentDelay
+    @test mdl.observation_model.model.model.model.model isa EpiSewer.FlowNormalize
+    @test mdl.observation_model.model.model.model.model.error_model isa
+        EpiSewer.MeasurementOutliers
 end
 
 @testitem "observation_lead_in sums the chain's LatentDelay lead-ins" begin
@@ -215,7 +216,7 @@ end
     @test mdl_override isa CT.IDModel
     @test mdl_override.infection_model === inf
     @test mdl_override.observation_model isa CT.LatentDelay
-    @test mdl_override.observation_model.model.model.model isa
+    @test mdl_override.observation_model.model.model.model.model isa
         EpiSewer.FlowNormalize
 end
 
@@ -232,7 +233,7 @@ end
     @test mdl.infection_model === inf
     # The default observation chain is still assembled.
     @test mdl.observation_model isa CT.LatentDelay
-    @test mdl.observation_model.model.model.model isa EpiSewer.FlowNormalize
+    @test mdl.observation_model.model.model.model.model isa EpiSewer.FlowNormalize
 end
 
 # The remaining testitems compose one package component at a time into a small

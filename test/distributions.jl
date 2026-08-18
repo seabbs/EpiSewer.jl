@@ -50,7 +50,7 @@ end
     mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)
     # `LatentDelay` stores the PMF reversed.
     incubation = reverse(mdl.observation_model.delay)
-    shedding = reverse(mdl.observation_model.model.model.delay)
+    shedding = reverse(mdl.observation_model.model.model.model.delay)
 
     @test length(incubation) == 8
     @test length(shedding) == 38
@@ -73,7 +73,7 @@ end
 
     # A continuous distribution is discretised by the component.
     from_dist = EpiSewer.model(; EpiSewer.example_assumptions()..., shedding_dist = Gamma(2.0, 1.0), D_shedding = 6.0)
-    @test length(from_dist.observation_model.model.model.delay) == 6
+    @test length(from_dist.observation_model.model.model.model.delay) == 6
 
     # An already discretised PMF is used as given (no `D` needed). `Renewal`
     # only drops the lag-0 bin when it discretises a distribution itself, so a
@@ -81,7 +81,7 @@ end
     # no-same-day-transmission convention.
     pmf = fill(0.25, 4)
     from_vec = EpiSewer.model(; EpiSewer.example_assumptions()..., shedding_dist = pmf, generation_time = pmf)
-    @test reverse(from_vec.observation_model.model.model.delay) ≈ pmf
+    @test reverse(from_vec.observation_model.model.model.model.delay) ≈ pmf
     @test from_vec.infection_model.gen_int ≈ pmf
 
     # A prior model (delay parameters carry priors) is held and sampled per
@@ -102,7 +102,7 @@ end
         generation_time = uncertain, infection_noise = nothing,
     )
     @test from_prior.observation_model.delay === uncertain
-    @test from_prior.observation_model.model.model.delay === uncertain
+    @test from_prior.observation_model.model.model.model.delay === uncertain
     @test from_prior.infection_model.gen_int === uncertain
 end
 
@@ -116,9 +116,12 @@ end
     # shedding profile (Stan: `lambda = convolve(inc_rev, I)`).
     @test mdl.observation_model isa CT.LatentDelay
     @test length(mdl.observation_model.delay) == 8
-    @test mdl.observation_model.model isa CT.Ascertainment
-    @test mdl.observation_model.model.model isa CT.LatentDelay
-    @test mdl.observation_model.model.model.model isa EpiSewer.FlowNormalize
+    @test mdl.observation_model.model isa EpiSewer.LoadVariation
+    @test mdl.observation_model.model.model isa CT.Ascertainment
+    @test mdl.observation_model.model.model.model isa CT.LatentDelay
+    @test mdl.observation_model.model.model.model.model isa EpiSewer.FlowNormalize
+    @test mdl.observation_model.model.model.model.model.error_model isa
+        EpiSewer.MeasurementOutliers
 
     # No residence convolution by default (the `FlowNormalize` above sits
     # directly inside the shedding delay): EpiSewer's `residence_dist = c(1)` is
@@ -126,7 +129,7 @@ end
     # one inserts it between the shedding delay and the flow division, as Stan
     # does.
     with_res = EpiSewer.model(; EpiSewer.example_assumptions()..., residence_dist = [0.7, 0.3])
-    inner = with_res.observation_model.model.model.model
+    inner = with_res.observation_model.model.model.model.model
     @test inner isa CT.LatentDelay
     @test reverse(inner.delay) ≈ [0.7, 0.3]
     @test inner.model isa EpiSewer.FlowNormalize
