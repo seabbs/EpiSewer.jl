@@ -15,23 +15,17 @@ EpiAware components.*
 
 ## Why EpiSewer.jl?
 
-- **Transmission from wastewater**: estimate `R_t`, infections and shed load
-  from pathogen concentrations, with missing and non-daily measurements carried
-  by the model rather than imputed beforehand.
-- **Swap an assumption, not a model**: each stage is a separate component, so
-  changing the `R_t` process, a delay distribution, or the measurement noise is
-  a changed argument rather than a rewrite.
-- **One interface**: the assembly is a `ComposableTuringIDModels.IDModel` and
-  becomes a [Turing](https://turinglang.org) model through `as_turing_model`,
-  so the full Turing toolbox applies and it nests with the rest of the
-  ecosystem.
-- **More than one data stream**: the same infection process feeds wastewater
-  concentrations and case surveillance together through `Split`, each with its
-  own delays and noise.
-- **A library of parts**: relative log-normal noise, digital PCR counts, limits
-  of detection, outlier spikes, flow normalisation, sewer residence time,
-  shedding load profiles, load shed per case, individual-level load variation,
-  and stochastic infections.
+- Wastewater measures transmission without depending on who comes forward for
+  a test, so it keeps reporting when testing falls away.
+- Every assumption is an argument, so changing the `R_t` process or the
+  measurement noise means passing a different component rather than editing
+  model code.
+- The assembly becomes a [Turing](https://turinglang.org) model, so the
+  samplers, diagnostics and plotting you already use apply to it unchanged.
+- Concentrations and case counts can be fitted as one model, instead of two
+  pipelines whose estimates are combined afterwards.
+- Missing days, non-daily sampling and non-detects are part of the likelihood,
+  so a sparse series needs no imputation before it is fitted.
 
 The [Model components](https://samabbott.co.uk/EpiSewer.jl/stable/components/model-components) page maps each component of the R model onto the ecosystem piece that provides it, and marks the boundary of the default chain.
 
@@ -72,8 +66,14 @@ flow = Vector{Float64}(d.flows.flow)
 
 ### Assumptions
 
-Estimating transmission from concentrations requires assumptions about the disease: the generation time, the load shed over time by an average infected individual, the incubation period that puts that profile on the infection timescale, and the scale of infections at the start of the series.
-These are disease-specific and typically taken from the literature, so `EpiSewer.model` asks for them rather than assuming them.
+Estimating transmission from concentrations needs four assumptions about the disease.
+
+- the generation time
+- the load shed over time by an average infected individual
+- the incubation period, which puts that profile on the infection timescale
+- the scale of infections at the start of the series
+
+These are disease-specific and usually taken from the literature, so `EpiSewer.model` asks for them rather than assuming them.
 `example_assumptions` holds the set the EpiSewer README uses for SARS-CoV-2 in Zurich.
 
 ```julia

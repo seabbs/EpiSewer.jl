@@ -82,3 +82,19 @@ end
 #         rtol = 1.0e-6, scenario_kwargs = (; category = :latent)
 #     )
 # end
+
+# The registry's `category` selector is the only named option in this package
+# with a fixed valid set, so it is the one place the kit's option-validation
+# fuzzer applies. `scenarios` ignored an unrecognised category before, silently
+# returning the marginal set, which would have let a mistyped category in an
+# item above pass while testing the wrong scenarios (kit#310).
+#
+# Tagged `:forwarddiff` as well as `:registry` because `ad.yaml` selects items
+# by backend tag alone, so a `:registry`-only item would never run in CI. The
+# check is backend-independent; the ForwardDiff job is the reference job that
+# always runs, so this executes once per CI run rather than seven times.
+@testitem "scenario category is validated eagerly" tags = [:ad, :registry, :forwarddiff] setup = [ADHelpers] begin
+    EpiAwarePackageTools.test_option_validation(
+        ADFixtures.validate_category, ADFixtures.SCENARIO_CATEGORIES
+    )
+end

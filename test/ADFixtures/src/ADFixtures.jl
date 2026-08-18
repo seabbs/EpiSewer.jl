@@ -24,7 +24,8 @@ using DynamicPPL: DynamicPPL, LogDensityFunction, VarInfo, getindex_internal,
 import LogDensityProblems as LDP
 
 export scenarios, backends, broken_scenario_names,
-    backend_broken_scenarios, backend_skip_scenarios
+    backend_broken_scenarios, backend_skip_scenarios,
+    SCENARIO_CATEGORIES, validate_category
 
 # Turn a DynamicPPL model into a real differentiable scalar log-density.
 #
@@ -189,6 +190,33 @@ function _targets()
     return out
 end
 
+"""
+    SCENARIO_CATEGORIES
+
+The group names [`scenarios`](@ref) accepts. One entry today: every scenario in
+this registry differentiates a marginal log-density.
+"""
+const SCENARIO_CATEGORIES = (:marginal,)
+
+"""
+    validate_category(category)
+
+Reject a `category` outside [`SCENARIO_CATEGORIES`](@ref).
+
+Eager, because the selector is otherwise unused: an unrecognised name would
+return the whole registry and the typo would surface as a passing test of the
+wrong scenarios.
+"""
+function validate_category(category::Symbol)
+    category in SCENARIO_CATEGORIES && return nothing
+    return throw(
+        ArgumentError(
+            "unknown scenario category $(repr(category)); valid categories: " *
+                join(repr.(SCENARIO_CATEGORIES), ", ")
+        )
+    )
+end
+
 @doc """
     scenarios(; with_reference = false, category = :marginal)
 
@@ -196,10 +224,13 @@ The AD gradient scenarios — each a `DIT.Scenario{:gradient, :out}` over a real
 EpiSewer log-density: the linked log-joint of a composed model conditioned on
 data simulated from its own prior, differentiated at the parameters that
 produced that data. When `with_reference = true` each scenario carries its
-ForwardDiff reference gradient in `res1`. `category` is accepted for the
-harness's group selector; all scenarios are in the single `:marginal` group here.
+ForwardDiff reference gradient in `res1`. `category` is the harness's group
+selector, validated against [`SCENARIO_CATEGORIES`](@ref): every scenario here
+is in the single `:marginal` group, so a mistyped category throws rather than
+silently returning the marginal set under another name.
 """
 function scenarios(; with_reference::Bool = false, category::Symbol = :marginal)
+    validate_category(category)
     out = DIT.Scenario{:gradient, :out}[]
     for (name, f, θ, prep) in _targets()
         ref = with_reference ?

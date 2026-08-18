@@ -1,5 +1,14 @@
 # MANAGED by EpiAwarePackageTools.scaffold — do not edit by hand.
 #
+# EPIAWARE_MANAGED_OVERRIDE: kept package-owned, because the `update` call
+# below needs two inputs the kit cannot recover from the repo. `repo` is not
+# detected (unlike `license`, `reviewer` and `docs_subdomain`, which are), so
+# it defaults to `<org>/<package>.jl` — `EpiAware/EpiSewer.jl`, which does not
+# exist. This package lives under `seabbs`. `docs_timeout` is not detected
+# either, so a bare sync drops the 90-minute Documenter budget the README's
+# fit needs. Both are passed explicitly here. Drop this marker once the kit
+# detects them: EpiAware/EpiAwarePackageTools.jl#462.
+#
 # Scheduled template-sync. Re-applies the managed EpiAware standard and, when
 # committed infra has drifted from the kit, opens (or refreshes) a PR with
 # the refresh, so a repo never silently falls behind.
@@ -91,9 +100,9 @@ jobs:
         run: |
           julia --color=yes -e '
               using Pkg
-              Pkg.activate(; temp = true); Pkg.add(url = "https://github.com/seabbs/EpiAwarePackageTools.jl", rev = "main")
+              Pkg.activate(; temp = true); Pkg.add(url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main")
               using EpiAwarePackageTools
-              res = EpiAwarePackageTools.update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true)
+              res = EpiAwarePackageTools.update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true, repo = "seabbs/EpiSewer.jl", docs_timeout = 90)
               println("re-applied ", length(res.updated), " managed files")
               # Gaps a sync cannot close itself: write-once seeds it cannot
               # extend, and package-owned prose describing a retired standard.
@@ -135,7 +144,7 @@ jobs:
             ci
           body: |
             Automated re-apply of the managed EpiAwarePackageTools standard
-            (`update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true)`).
+            (`update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true, repo = "seabbs/EpiSewer.jl", docs_timeout = 90)`).
 
             Merge to bring this repo's managed infra back in line with the kit.
             Package-owned files (unit tests, `qa_config.jl`, AD scenarios,
@@ -203,7 +212,8 @@ jobs:
                  EpiAwarePackageTools.update("."; ad = true,
                  benchmarks = false,
                  downgrade_compat = true,
-                 unregistered_sources = false)'
+                 unregistered_sources = false,
+                 repo = "seabbs/EpiSewer.jl", docs_timeout = 90)'
 
           2. **Ask the kit for the flexibility.** If \`update\` throws, or it
              overwrites something this package legitimately needs to keep, that
