@@ -18,7 +18,7 @@ EpiSewer.jl provides a Bayesian generative model to estimate the effective repro
 
 **Sewer** — flow normalisation and sewer residence time distributions.
 
-**Shedding** — shedding load profiles relative to symptom onset or to infection, with a load shed per case.
+**Shedding** — shedding load profiles relative to symptom onset or to infection, with a load shed per case and variation in the load shed between individuals.
 
 **Infections** — a renewal process with stochastic infections, and `R_t` smoothed by a Gaussian process, a random walk, an autoregressive process, or any other latent model in the ecosystem.
 
@@ -76,7 +76,8 @@ The delays are continuous distributions here, and the components that use them d
 ### Estimation
 
 `EpiSewer.model` assembles the default model.
-Infections follow a renewal process with a smoothly varying `R_t`, and are observed through the incubation period, the load shed per case, the shedding profile, division by the daily flow, and relative log-normal measurement noise.
+Infections follow a renewal process with a smoothly varying `R_t`.
+They are observed through the incubation period, variation in the load shed between individuals, the load shed per case, the shedding profile, division by the daily flow, outlier spikes, and relative log-normal measurement noise.
 
 ```julia
 idm = EpiSewer.model(; EpiSewer.example_assumptions()...)

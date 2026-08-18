@@ -66,9 +66,10 @@ observation_chain(idm.observation_model)
 ```
 
 Read that list outside in and it is the order the transformations are applied.
-The default chain convolves infections with the incubation period, scales by
-the load shed per case, convolves with the shedding load profile, divides by
-the daily flow, and scores the result with relative log-normal noise.
+The default chain convolves infections with the incubation period, varies the
+load shed between individuals, scales by the load shed per case, convolves with
+the shedding load profile, divides by the daily flow, adds outlier spikes, and
+scores the result with relative log-normal noise.
 
 ### Sizing the infection series
 
@@ -155,11 +156,11 @@ series_plot(
 
 ## The components this package adds
 
-Six components cover the wastewater-specific parts of the model.
+Seven components cover the wastewater-specific parts of the model.
 Each one below is shown on a short series, so you can see what it does to the
 expected values and to a draw.
 
-Five of them are observation models, and a shared helper draws from any of
+Six of them are observation models, and a shared helper draws from any of
 them.
 
 ```@example gs
@@ -255,6 +256,32 @@ end
 round.(noisy_infections(resolved, expectations); digits = 1)
 ```
 
+### `LoadVariation`
+
+Variation in the load shed between individuals.
+The series it takes counts shedding individuals, each of whom sheds a random
+load, so the realised load is a sum of that many individual draws rather than
+that many times a fixed amount.
+Summing gamma loads with coefficient of variation `cv` keeps the expected value
+and adds variance proportional to it, so the relative spread falls as the
+number of shedders grows.
+
+```@example gs
+using Distributions: Normal, mean, std
+
+lv = EpiSewer.LoadVariation(EpiSewer.LogNormalError(; cv = Normal(0.01, 0.0)))
+varied = prior_draw(lv, fill(400.0, 500)).expected
+(
+    shedders = 400.0,
+    mean_load = round(mean(varied); digits = 1),
+    sd_load = round(std(varied); digits = 1),
+    sd_predicted = round(sqrt(400.0); digits = 1),
+)
+```
+
+At the default `cv = 1` that is Poisson-equivalent variance, which is what
+EpiSewer fixes it to.
+
 ### `FlowNormalize`
 
 Divides the expected load by the daily flow to give an expected concentration,
@@ -263,8 +290,6 @@ The flow is data rather than a field on the model, so it travels through the
 observation-data contract as `y_t = (y = concentrations, flow = flow)`.
 
 ```@example gs
-using Distributions: Normal
-
 fn = EpiSewer.FlowNormalize(EpiSewer.LogNormalError(; cv = Normal(0.1, 0.0)))
 load = fill(2.0e13, 4)
 daily_flow = [2.0e11, 4.0e11, 8.0e11, 2.0e11]
@@ -288,8 +313,6 @@ That is the shape concentrations spanning orders of magnitude need.
 The prior on it is sampled under the name `cv`.
 
 ```@example gs
-using Distributions: mean, std
-
 lne = EpiSewer.LogNormalError(; cv = Normal(0.3, 0.0))
 map((100.0, 10000.0)) do level
     draws = prior_draw(lne, fill(level, 500)).y_t
@@ -450,8 +473,9 @@ away from the data buys a sustained `R_t` excursion to compensate.
 where the `initial_infections` in `example_assumptions` comes from.
 
 ```@example gs
-lpc_prior = Normal(log(2.0e11), 0.5)
-crude = EpiSewer.crude_initial_infections(y, flow, exp(mean(lpc_prior)))
+crude = EpiSewer.crude_initial_infections(
+    y, flow, exp(mean(assumptions.lpc_prior))
+)
 tuned = EpiSewer.model(; assumptions..., initial_infections = crude)
 (
     crude = round(crude; digits = 1),
@@ -498,7 +522,8 @@ using Distributions: Gamma
 function chain(error_model)
     obs = EpiSewer.FlowNormalize(error_model)
     obs = CT.LatentDelay(obs, assumptions.shedding_dist; D = 38.0)
-    obs = CT.Ascertainment(obs, lpc_prior)
+    obs = CT.Ascertainment(obs, assumptions.lpc_prior)
+    obs = EpiSewer.LoadVariation(obs)
     return CT.LatentDelay(obs, assumptions.incubation_dist; D = 8.0)
 end
 
@@ -517,46 +542,47 @@ censored = EpiSewer.model(;
 Same lead-in as the default, because the delays are the same and the error
 model is not a delay.
 
-The same route adds a stage the default chain does not have.
-`MeasurementOutliers` belongs immediately inside `FlowNormalize`, so the spike
-is added after the flow division and lands on the concentration scale.
-Its `scale` is the concentration equivalent of one unit of spike, which is the
-load-per-case prior median over the median flow.
+### The observation-scale variance
+
+Two keywords tune how much variation the chain can absorb before the
+transmission dynamics have to account for it.
+`load_cv` sets the individual-level load variation, and `outlier_scale` sets
+the concentration equivalent of one unit of outlier spike.
+`nothing` removes either component.
+
+```@example gs
+plain = EpiSewer.model(; assumptions..., outlier_scale = nothing)
+(
+    default = observation_chain(idm.observation_model),
+    without_outliers = observation_chain(plain.observation_model),
+)
+```
+
+Drawing from both shows what the outlier component buys.
+Within a draw, most days sit close to the typical expected concentration, and
+with the component in place a few carry a spike far above it.
 
 ```@example gs
 using Statistics: median
 
-scale = exp(median(lpc_prior)) / median(flow)
-with_outliers = EpiSewer.model(;
-    assumptions...,
-    observation_model = chain(
-        EpiSewer.MeasurementOutliers(EpiSewer.LogNormalError(); scale = scale)
+function spread(m; n_draws = 50)
+    ratios = DataFrame(
+        ratio = reduce(
+            vcat,
+            [
+                g.expected_y_t ./ median(g.expected_y_t)
+                    for g in prior_draws(m, (y = y, flow = flow), n; n_draws)
+            ]
+        )
     )
-)
-(
-    scale = round(scale; sigdigits = 3),
-    stages = observation_chain(with_outliers.observation_model),
-)
-```
-
-Drawing from that model shows what the extra stage buys.
-Within a draw, most days sit close to the typical expected concentration and a
-few carry a spike far above it.
-
-```@example gs
-outlier_draws = prior_draws(
-    with_outliers, (y = y, flow = flow), n; n_draws = 50
-)
-ratios = DataFrame(
-    ratio = reduce(
-        vcat, [g.expected_y_t ./ median(g.expected_y_t) for g in outlier_draws]
+    return (
+        days = nrow(ratios),
+        over_10x = nrow(@rsubset(ratios, :ratio > 10)),
+        largest = round(maximum(ratios.ratio); sigdigits = 2),
     )
-)
-(
-    days = nrow(ratios),
-    over_10x = nrow(@rsubset(ratios, :ratio > 10)),
-    largest = round(maximum(ratios.ratio); sigdigits = 2),
-)
+end
+
+(with_outliers = spread(idm), without_outliers = spread(plain))
 ```
 
 ### The delay keywords
