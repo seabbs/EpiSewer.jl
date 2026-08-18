@@ -10,19 +10,28 @@
 | [![cov ForwardDiff](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-forwarddiff)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-forwarddiff) | [![cov ReverseDiff](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-reversediff)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-reversediff) | [![cov ReverseDiff compiled](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-reversediff-compiled)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-reversediff-compiled) | [![cov Enzyme forward](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-enzyme-forward)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-enzyme-forward) | [![cov Enzyme reverse](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-enzyme-reverse)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-enzyme-reverse) | [![cov Mooncake reverse](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-mooncake-reverse)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-mooncake-reverse) | [![cov Mooncake forward](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-mooncake-forward)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-mooncake-forward) |
 <!-- badges:end -->
 
-EpiSewer.jl provides a Bayesian generative model to estimate the effective reproduction number R_t and other transmission indicators from pathogen concentrations measured in wastewater. This is a Julia implementation using composable components from the EpiAware.org ecosystem.
+*A Julia port of the EpiSewer wastewater model, built from composable
+EpiAware components.*
 
 ## Why EpiSewer.jl?
 
-**Measurements** — missing and non-daily measurements, relative log-normal noise, a digital PCR noise model, limits of detection, and outlier spikes.
-
-**Sewer** — flow normalisation and sewer residence time distributions.
-
-**Shedding** — shedding load profiles relative to symptom onset or to infection, with a load shed per case and variation in the load shed between individuals.
-
-**Infections** — a renewal process with stochastic infections, and `R_t` smoothed by a Gaussian process, a random walk, an autoregressive process, or any other latent model in the ecosystem.
-
-**Composition** — every stage is a separate component, so a changed assumption is a changed argument. The assembly becomes a single [Turing](https://turinglang.org) model through `as_turing_model`, so the full Turing toolbox applies.
+- **Transmission from wastewater**: estimate `R_t`, infections and shed load
+  from pathogen concentrations, with missing and non-daily measurements carried
+  by the model rather than imputed beforehand.
+- **Swap an assumption, not a model**: each stage is a separate component, so
+  changing the `R_t` process, a delay distribution, or the measurement noise is
+  a changed argument rather than a rewrite.
+- **One interface**: the assembly is a `ComposableTuringIDModels.IDModel` and
+  becomes a [Turing](https://turinglang.org) model through `as_turing_model`,
+  so the full Turing toolbox applies and it nests with the rest of the
+  ecosystem.
+- **More than one data stream**: the same infection process feeds wastewater
+  concentrations and case surveillance together through `Split`, each with its
+  own delays and noise.
+- **A library of parts**: relative log-normal noise, digital PCR counts, limits
+  of detection, outlier spikes, flow normalisation, sewer residence time,
+  shedding load profiles, load shed per case, individual-level load variation,
+  and stochastic infections.
 
 The [Model components](https://samabbott.co.uk/EpiSewer.jl/stable/components/model-components) page maps each component of the R model onto the ecosystem piece that provides it, and marks the boundary of the default chain.
 
