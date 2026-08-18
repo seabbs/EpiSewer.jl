@@ -310,7 +310,10 @@ The real-space mean is the expected concentration and the real-space standard
 deviation is proportional to it, so the parameter is a coefficient of variation
 rather than an absolute scale.
 That is the shape concentrations spanning orders of magnitude need.
-The prior on it is sampled under the name `cv`.
+The prior on it is sampled under the name `cv`, and its default is R's, which is
+weak on purpose: a half-normal of scale 1, so a prior median coefficient of
+variation of 0.67.
+The data is expected to pull it far below that.
 
 ```@example gs
 lne = EpiSewer.LogNormalError(; cv = Normal(0.3, 0.0))

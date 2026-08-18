@@ -222,3 +222,22 @@ end
     d = EpiSewer.observation_error(EpiSewer.LogNormalError(), 100.0, 1.0e150)
     @test logpdf(d, 100.0) < 0
 end
+
+# The default came from R's *init* for this parameter rather than its prior, so
+# it was eight times too tight. Pinned here because the two numbers sit two lines
+# apart in R's source and are easy to confuse again.
+@testitem "LogNormalError's default cv prior is R's, not R's init" begin
+    using EpiSewer
+    using ComposableTuringIDModels: HalfNormal
+    using Distributions: Normal, truncated, mean, std
+
+    cv = EpiSewer.LogNormalError().cv
+    @test cv isa HalfNormal
+    # R: `normal(0, 1) T[0, ]` (`EpiSewer_main.stan:910`) from
+    # `noise_estimate(cv_prior_sigma = 1)`.
+    r = truncated(Normal(0.0, 1.0), 0.0, Inf)
+    @test mean(cv) ≈ mean(r)
+    @test std(cv) ≈ std(r)
+    # Not R's init of 0.1, which is what this replaced.
+    @test !isapprox(mean(cv), 0.1; atol = 0.01)
+end

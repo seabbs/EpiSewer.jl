@@ -157,8 +157,13 @@ process, drawn through the `as_turing_submodel` seam like `NormalError`
 treats its `std` prior. It is sampled under the name `cv`, which is what a
 coefficient of variation is.
 
+The default matches R's `noise_estimate(cv_prior_mu = 0, cv_prior_sigma = 1)`,
+which Stan scores as `normal(0, 1) T[0, ]` — a half-normal of scale 1, so a mean
+of ``\sqrt{2/\pi}``. `HalfNormal` here is parameterised by its **mean**, not
+its scale, hence `HalfNormal(sqrt(2 / π))` rather than `HalfNormal(1)`.
+
 # Fields
-- `cv::S`: prior for the coefficient of variation `σ`.
+- `cv::S`: prior for the coefficient of variation `σ`. Defaults to R's.
 
 # Example
 ```julia
@@ -173,7 +178,14 @@ struct LogNormalError{S <: PriorLike} <: AbstractObservationErrorModel
     cv::S
 end
 
-LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
+# R's own prior, not its initial value. `noise_estimate`'s default is
+# `cv_prior_sigma = 1` (`R/model_measurements.R:547`), scored at
+# `EpiSewer_main.stan:910` as `normal(0, 1) T[0, ]`. The 0.1 this replaced is
+# R's *init* for the same parameter (`model_measurements.R:591`, commented "10%
+# coefficient of variation"), which is a different thing and eight times
+# tighter than the prior. A tight noise prior leaves the outlier spikes to
+# explain any deviation the noise cannot absorb.
+LogNormalError(; cv = HalfNormal(sqrt(2 / π))) = LogNormalError(cv)
 
 @model function generate_observation_error_priors(
         obs_model::LogNormalError, y_t, Y_t
