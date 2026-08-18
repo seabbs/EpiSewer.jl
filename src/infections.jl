@@ -69,9 +69,9 @@ smooth upper limit ``u - \mathrm{softplus}(u - c, k)``, which holds it finite as
 
 The parameterisation is **non-centred**: the sampled quantity is the standard
 normal ``\tilde{I}_t`` and the location and scale are applied afterwards. This is
-forced rather than chosen — `apply_modifier` is deterministic and a modifier's
+forced rather than chosen: `apply_modifier` is deterministic and a modifier's
 priors resolve before the scan, so a modifier cannot draw ``I_t`` conditional on
-``\iota_t`` (ComposableTuringIDModels issue #271).
+``\iota_t``.
 
 Because the modified incidence is what the renewal scan feeds forward, the noise
 compounds through the process rather than perturbing each day in isolation.

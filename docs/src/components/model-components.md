@@ -28,7 +28,7 @@ The table below lists every model component, its role, and the ecosystem compone
 | shedding | `incubation_dist_assume` | Incubation period, so a shedding profile indexed from symptom onset can be applied to infections | `LatentDelay`, via `model()`'s `incubation_dist` |
 | shedding | `shedding_dist_assume` / `shedding_dist_estimate` | Shedding load profile, assumed or inferred | `LatentDelay` with the shedding load distribution, or with an `UncertainDelay` when its parameters carry priors |
 | shedding | `load_per_case_assume` / `load_per_case_calibrate` | Load shed per case | `Ascertainment` scaling `I_t` by `exp(lpc)` at the observation stage |
-| shedding | `load_variation_estimate` | Individual-level shedding-load overdispersion | No ecosystem counterpart; this needs a Gamma sum over the day's cases, which has to sit outside the load-per-case step because the scaling `ν / sqrt(cases)` needs the case count |
+| shedding | `load_variation_estimate` | Individual-level shedding-load overdispersion | `LoadVariation` in `src/shedding.jl`, in the default chain outside the load-per-case step. R's `gamma_sum_log_approx`: a normal draw at the gamma's moments, floored by a softplus |
 | infections | `generation_dist_assume` | Generation-time distribution between infections | `Renewal(generation_time = ...)`, which discretises a continuous distribution itself and drops the lag-0 bin |
 | infections | `R_estimate_rw`, `R_estimate_gp` and six further smoothers | Flexible `R_t` smoothing | `RandomWalk` for the random walk and `HilbertSpaceGP` / `ExactGP` for the GP, both reachable through `model()`'s `rt`, with `CombineLatentModels` summing GP terms and `TransformLatentModel` applying a link. `AR`, `MA` and `DiffLatentModel` are the nearest analogues of the spline, piecewise, exponential-smoothing and smooth-derivative options |
 | infections | `seeding_estimate_constant` / `seeding_estimate_growth` / `seeding_estimate_rw` | Infections over the seeding phase, whose length is the generation interval's horizon, before the renewal recursion can be applied | `Renewal`'s `initialisation`, set through `model()`'s `seeding`, seeds the window at `I₀` decaying at the growth rate implied by `R₀`, a fixed exponential. That covers the intercept of R's random walk over the seeding phase; the walk itself needs a custom renewal step whose `recurrent_step` overrides `renewal_init_window` |
@@ -48,7 +48,7 @@ Two of the wastewater-specific pieces are compositions with no new struct at all
 Load-per-case calibration is an `Ascertainment` scaling `I_t` by `exp(lpc)`.
 The sewer residence time is a `LatentDelay`, and R's default `residence_dist = c(1)` is a point mass at same-day arrival, so an identity convolution.
 
-This package adds six `ComposableTuringIDModels.jl`-compatible structs.
+This package adds seven `ComposableTuringIDModels.jl`-compatible structs.
 Three are compositions of ecosystem pieces:
 
 - `MeasurementOutliers` is an `Ascertainment` over `IID(truncated(GEV(...)))`
@@ -57,37 +57,49 @@ Three are compositions of ecosystem pieces:
   link over a `BinomialError`.
 - `LOD` wraps an inner error model's distribution in `Distributions.censored`.
 
-Three provide behaviour the ecosystem does not.
+Four provide behaviour the ecosystem does not.
 `FlowNormalize` reads the daily flow out of the observation-data contract.
 `LogNormalError` is a relative-noise error family, parameterised by a
 coefficient of variation.
 `InfectionNoise` is a renewal modifier, drawing infections with the
 negative-binomial variance at the renewal expectation and feeding the draw
 forward through the scan.
+`LoadVariation` draws the realised shedding load around the expected one, with
+the variance of a sum of individual loads.
 
 `InfectionNoise` resolves to an `InfectionNoiseDraws` once its standard normals
 are drawn, which is the form the renewal scan steps through.
 
 ## The default chain and what sits outside it
 
-`EpiSewer.model()` composes a `Renewal` infection process, with a Hilbert-space GP `R_t` prior and stochastic infections, observed through the chain incubation delay → per-case load → shedding delay → flow division → log-normal noise.
-The [getting started](@ref getting-started) page reads both stages off the assembled model and shows how to replace either.
+`EpiSewer.model()` composes a `Renewal` infection process, with a summed
+Gaussian-process `R_t` prior and stochastic infections, observed through the
+chain incubation delay → individual-level load variation → per-case load →
+shedding delay → flow division → outlier spikes → log-normal noise.
+The [getting started](@ref getting-started) page reads both stages off the
+assembled model and shows how to replace either.
 
-Three parts of R's model tree sit outside that assembly.
+One part of R's model tree sits outside that assembly.
 
-**`load_variation_estimate`.** R replaces the expected case count with a Gamma sum over that day's cases, giving a population-level CV of `ν / sqrt(cases)` for an individual-level CV of `ν`.
-Because that scaling needs the case count, the component sits outside the load-per-case step, which is what turns cases into load.
+**The random walk over the seeding phase.** R's `seeding_estimate_rw` runs a
+random walk on log infections across the seeding phase, whose length is the
+generation interval's horizon.
+`model()`'s `seeding` supplies the intercept of that walk, and `Renewal` seeds
+the window at `I₀` decaying at the rate implied by `R₀`.
+A walk there is a custom renewal step whose `recurrent_step` overrides
+`renewal_init_window`.
 
-**The random walk over the seeding phase.** R's `seeding_estimate_rw` runs a random walk on log infections across the seeding phase, whose length is the generation interval's horizon.
-`model()`'s `seeding` supplies the intercept of that walk, and `Renewal` seeds the window at `I₀` decaying at the rate implied by `R₀`.
-A walk there is a custom renewal step whose `recurrent_step` overrides `renewal_init_window`.
-
-**`MeasurementOutliers`.** This is a component of the package that the default chain does not include.
-Place it immediately inside `FlowNormalize`, so the spike is added after the flow division and lands on the concentration scale, with `scale` set from the load-per-case prior median over the median flow.
-
-R's `R_estimate_gp` sums two Matérn-3/2 GPs, a short-term one at 21 ± 3.5 days with magnitude 0.125 and a long-term one at 84 days with magnitude 0.25, then maps the sum through a softplus link with a soft upper bound on `R_t`.
-The default here is a single `HilbertSpaceGP` carrying the short-term term's settings, with `CombineLatentModels` available for the sum and `TransformLatentModel` for the link.
-A `HilbertSpaceGP` measures its length scale in standard deviations of the standardised time index rather than in days, so `gp_length_scale` converts R's prior in days at a given series length and `model()`'s `n_gp` sets the length the default assumes.
+R's `R_estimate_gp` sums two Matérn-3/2 GPs, a short-term one at 21 ± 3.5 days
+with magnitude 0.125 and a long-term one at 84 ± 7 days with magnitude 0.25, then
+maps the sum through an `inv_softplus` link.
+The default here is the same sum, built by `CombineLatentModels` and mapped
+through `softplus_link` with `TransformLatentModel`.
+The link is unbounded above; R's `R_max` applies only to its alternative
+`scaled_logit` link.
+A `HilbertSpaceGP` measures its length scale in standard deviations of the
+standardised time index rather than in days, so `gp_length_scale` converts R's
+prior in days at a given series length and `model()`'s `n_gp` sets the length the
+default assumes.
 
 `residence_dist_assume` needs no wiring either way.
 R's default `residence_dist = c(1)` is a point mass at same-day arrival, so `model()`'s `residence_dist` defaults to `nothing` and the wrapper is absent.

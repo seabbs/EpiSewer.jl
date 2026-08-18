@@ -39,7 +39,7 @@ Returns a `NamedTuple` ready to splat into [`model`](@ref EpiSewer.model):
   one decimal place.
 
 # Examples
-```@example example_assumptions
+```@example model
 using EpiSewer
 idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
 nameof(typeof(idm))
@@ -107,14 +107,14 @@ what R does and what a single shared `transformation` could not express.
 - `sharpness`: the softplus sharpness, R's second `R_link` element.
 
 # Examples
-```@example softplus_link
+```@example model
 using EpiSewer
 exp.(EpiSewer.softplus_link([-0.5, 0.0, 0.5]))
 ```
 
 Against `exp`, which amplifies the upper tail:
 
-```@example softplus_link
+```@example model
 exp.([-0.5, 0.0, 0.5])
 ```
 """
@@ -147,7 +147,7 @@ This is the conversion the package default uses to carry EpiSewer's
   a `Normal` truncated at the length-scale floor rather than a bare number.
 
 # Examples
-```@example gp_length_scale
+```@example model
 using EpiSewer
 EpiSewer.gp_length_scale(21.0, 164)
 ```
@@ -155,7 +155,7 @@ EpiSewer.gp_length_scale(21.0, 164)
 Twice the series length halves the standardised scale, because the standard
 deviation of the index grows with it:
 
-```@example gp_length_scale
+```@example model
 EpiSewer.gp_length_scale(21.0, 328)
 ```
 """
@@ -207,15 +207,23 @@ default model for a different series.
   first week.
 
 # Examples
-```@example crude_initial_infections
+```@example model
 using EpiSewer
+using Dates: dayabbr
 d = EpiSewer.example_data()
 flow = Vector{Float64}(d.flows.flow)
-EpiSewer.crude_initial_infections(d.measurements.concentration, flow, 2.0e11)
+# The thinned series EpiSewer's README fits, which is what the shipped
+# `initial_infections` is computed from.
+thin = [
+    dayabbr(t) in ("Mon", "Thu") ? c : missing
+        for (t, c) in zip(d.measurements.date, d.measurements.concentration)
+]
+EpiSewer.crude_initial_infections(thin, flow, 1.1e11)
 ```
 
-That is the scale the default seeding prior is centred on, against a series whose
-measurements run from 145 to 3200 gc/mL.
+That is the value
+[`example_assumptions`](@ref EpiSewer.example_assumptions) ships, against a
+series whose measurements run from 145 to 3200 gc/mL.
 """
 function crude_initial_infections(concentration, flow, load_per_case; days = 7)
     head = concentration[1:min(days, length(concentration))]
@@ -364,9 +372,9 @@ scored. This is the composable equivalent of the R model's `L + S + D` lead-in.
 # Example
 The `n` to pass for a given observed series, with the default chain:
 
-```@example observation_lead_in
+```@example model
 using EpiSewer
-mdl = EpiSewer.model()
+mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)
 y = EpiSewer.example_data().measurements.concentration
 lead_in = EpiSewer.observation_lead_in(mdl)
 (observations = length(y), lead_in = lead_in, n = length(y) + lead_in)
@@ -403,20 +411,22 @@ function _observation_model(
 end
 
 """
-    model(; generation_time, shedding_dist, incubation_dist,
-        residence_dist = nothing, D_gen = 15.0, D_shedding = 38.0,
-        D_incubation = 8.0, D_residence = nothing, Δd = 1.0,
-        lpc_prior = Normal(log(2e11), 0.5), n_gp = 164, rt,
-        infection_noise = InfectionNoise(), initial_infections = 703.86,
-        seeding, infection_model, observation_model) -> IDModel
+    model(; generation_time, shedding_dist, incubation_dist, lpc_prior,
+        initial_infections, residence_dist = nothing, D_gen = 15.0,
+        D_shedding = 38.0, D_incubation = 8.0, D_residence = nothing,
+        Δd = 1.0, n_gp = 164, rt = _default_rt(; n = n_gp),
+        infection_noise = InfectionNoise(), outlier_scale = nothing,
+        load_cv = 1.0, seeding, infection_model,
+        observation_model) -> IDModel
 
 Assemble the wastewater model as a `ComposableTuringIDModels.IDModel`
 (EpiSewer's README example).
 
-The defaults are EpiSewer's default model: a `Renewal` whose `R_t` follows a
-Hilbert-space approximate Gaussian process, with stochastic infections and a
-data-scaled seeding prior, observed through the incubation delay → per-case load
-→ shedding delay → flow division → log-normal noise chain. The incubation delay
+The defaults are EpiSewer's default model: a `Renewal` whose `R_t` is the sum of
+a short-term and a long-term Hilbert-space Gaussian process under a softplus
+link, with stochastic infections, observed through the incubation delay →
+individual-level load variation → per-case load → shedding delay → flow division
+→ outlier spikes → log-normal noise chain. The incubation delay
 is outermost so it acts on `I_t` first, because the shedding profile is indexed
 from symptom onset. `infection_model` and `observation_model` are the composable
 swap points. The observed series and the daily flow are both data, passed at
@@ -434,22 +444,30 @@ swap points. The observed series and the daily flow are both data, passed at
   no-same-day-transmission convention. A `nothing` delay omits that
   convolution; `residence_dist` defaults to `nothing` because EpiSewer's
   `residence_dist = c(1)` is a point mass at same-day arrival, i.e. an identity
-  convolution. The defaults are the EpiSewer README example's assumptions:
-  a shifted `Gamma` generation time (mean 3, sd 2.4), `Gamma(0.929639,
-  7.241397)` shedding load, and `Gamma(8.5, 0.4)` incubation period.
+  convolution. The three disease distributions are required, as they are in R's
+  `sewer_assumptions()`;
+  [`example_assumptions`](@ref EpiSewer.example_assumptions) ships the README
+  example's set.
 - `D_gen`, `D_shedding`, `D_incubation`, `D_residence`, `Δd`: right-truncation
   horizons and bin width used when a delay input is a continuous distribution.
   They match R's `maxX` values and are ignored for a PMF vector or a prior model
   (which carries its own horizon).
 - `lpc_prior`: log-scale prior on the load shed per case (gc/case).
-- `rt`: the `R_t` prior. Defaults to EpiSewer's `R_estimate_gp()`: a
-  `HilbertSpaceGP` with a Matérn 3/2 kernel, boundary factor 3, and a
-  `Normal(0.125, 0.025)` magnitude prior, all of which carry over directly. Its
-  length scale does not, because R states it in days while `HilbertSpaceGP`
-  measures it in standard deviations of the time index. `n_gp` sets the series
-  length that conversion assumes, so the default is R's 21 ± 3.5 days at the
-  length of the example series; see
+- `rt`: the `R_t` prior. Defaults to EpiSewer's `R_estimate_gp()`: the **sum** of
+  a short-term (21 ± 3.5 days, magnitude 0.125) and a long-term (84 ± 7 days,
+  magnitude 0.25) Matérn-3/2 `HilbertSpaceGP`, summed by `CombineLatentModels`
+  and mapped through
+  [`softplus_link`](@ref EpiSewer.softplus_link). The magnitudes and kernel carry
+  over from R directly; the length scales do not, because R states them in days
+  while `HilbertSpaceGP` measures them in standard deviations of the time index.
+  `n_gp` sets the series length that conversion assumes; see
   [`gp_length_scale`](@ref EpiSewer.gp_length_scale) for another series.
+- `outlier_scale`: the concentration-scale size of one unit of outlier spike,
+  R's `load_mean / flow_median`. `nothing` omits
+  [`MeasurementOutliers`](@ref EpiSewer.MeasurementOutliers) from the chain.
+- `load_cv`: the individual-level coefficient of variation for
+  [`LoadVariation`](@ref EpiSewer.LoadVariation), R's fixed 1. `nothing` omits
+  the component.
 - `infection_noise`: the stochastic-infection modifier
   ([`InfectionNoise`](@ref EpiSewer.InfectionNoise)), EpiSewer's
   `infection_noise_estimate()`. Pass `nothing` for a deterministic renewal
@@ -475,7 +493,7 @@ import ComposableTuringIDModels: as_turing_model
 d = EpiSewer.example_data()
 y = d.measurements.concentration              # Union{Missing, Float64}, gc/mL
 flow = Vector{Float64}(d.flows.flow)          # mL/day — data
-idm = EpiSewer.model()
+idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
 # The infection series needs the observation chain's lead-in on top of the
 # observed days, so that every observation is scored (`observation_lead_in`).
 n = length(y) + EpiSewer.observation_lead_in(idm)

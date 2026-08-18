@@ -216,8 +216,8 @@ tiny = 1.0e-6
 )
 ```
 
-Every expectation in the table sits well below the limit, so it is inactive and
-the moments above hold exactly.
+Every expectation in the table sits well below the limit, so it barely bites and
+the moments above hold to within a few per cent.
 At an expectation of `1e-6` the uncapped relative spread would be the number on
 the last line, and the limit is what holds it to `cv_cap` instead.
 
@@ -469,8 +469,10 @@ shorthand that centres a default `Normal` on it.
 The scale matters, because the renewal process has to reconcile the seeded
 infections with the measured concentrations, so a prior orders of magnitude
 away from the data buys a sustained `R_t` excursion to compensate.
-`EpiSewer.crude_initial_infections` reads a starting value off the data, and is
-where the `initial_infections` in `example_assumptions` comes from.
+`EpiSewer.crude_initial_infections` reads a starting value off the data.
+It averages the measurements in the first week, so it is computed on the series
+actually observed: the shipped `initial_infections` comes from the thinned series
+EpiSewer's README fits, and the full series gives a larger value.
 
 ```@example gs
 crude = EpiSewer.crude_initial_infections(
