@@ -9,9 +9,46 @@
 # which is what R's `get_discrete_gamma_shifted` computes: its bins start at lag
 # 1 (`.resources/EpiSewer/R/utils_dists.R`, `k <- 1:maxX`). Shifting puts no
 # mass below 1, so `Renewal`'s drop-lag-0-and-renormalise step is exact.
-const _GENERATION_TIME = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1
-const _SHEDDING_DIST = Gamma(0.929639, 7.241397)
-const _INCUBATION_DIST = Gamma(8.5, 0.4)
+"""
+    example_assumptions()
+
+The disease assumptions the EpiSewer README uses, for the Zurich SARS-CoV-2
+series returned by [`example_data`](@ref EpiSewer.example_data).
+
+EpiSewer ships the same object as `ww_assumptions_SARS_CoV_2_Zurich`, and its
+README builds it with `sewer_assumptions()`. Neither package treats these as
+defaults: they are disease-specific inputs, so `model()` requires them and this
+is one prepared set to pass.
+
+Returns a `NamedTuple` ready to splat into [`model`](@ref EpiSewer.model):
+
+- `generation_time`: shifted `Gamma`, mean 3, sd 2.4.
+- `shedding_dist`: `Gamma(0.929639, 7.241397)`, relative to symptom onset.
+- `incubation_dist`: `Gamma(8.5, 0.4)`, which puts the shedding profile on the
+  infection timescale.
+- `lpc_prior`: log-scale prior on the load shed per case. EpiSewer calibrates
+  this from the case counts rather than assuming it (`load_per_case_calibrate()`
+  is its default), and 1.1e11 gc/case is what its `suggest_load_per_case` returns
+  for this series.
+- `initial_infections`: the crude seeding estimate, from
+  [`crude_initial_infections`](@ref EpiSewer.crude_initial_infections) on the
+  thinned series at that load per case. Matches R's `initial_cases_crude` to
+  one decimal place.
+
+# Examples
+```@example example_assumptions
+using EpiSewer
+idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
+nameof(typeof(idm))
+```
+"""
+example_assumptions() = (
+    generation_time = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1,
+    shedding_dist = Gamma(0.929639, 7.241397),
+    incubation_dist = Gamma(8.5, 0.4),
+    lpc_prior = Normal(log(1.1e11), 0.5),
+    initial_infections = 912.9,
+)
 
 # EpiSewer's `R_estimate_gp()` priors, in days
 # (`.resources/EpiSewer/R/model_infections.R`). It sums a short-term and a
@@ -130,11 +167,6 @@ end
 # `sigma = log(10) / 2`, i.e. a factor of ten either side of the median at about
 # two standard deviations (`.resources/EpiSewer/R/utils_modeldata.R`).
 const _SEEDING_SPREAD = log(10) / 2
-
-# The crude initial-infection estimate for the example series, from
-# `crude_initial_infections` on the shipped data at the default load per case.
-# Held as a constant so assembling a model reads no data.
-const _INITIAL_INFECTIONS = 703.86
 
 """
     crude_initial_infections(concentration, flow, load_per_case; days = 7)
@@ -387,8 +419,7 @@ end
         seeding, infection_model, observation_model) -> IDModel
 
 Assemble the wastewater model as a `ComposableTuringIDModels.IDModel`
-(EpiSewer's README example). **Public but not exported** — call as
-`EpiSewer.model(...)`.
+(EpiSewer's README example).
 
 The defaults are EpiSewer's default model: a `Renewal` whose `R_t` follows a
 Hilbert-space approximate Gaussian process, with stochastic infections and a
@@ -461,20 +492,20 @@ chn = sample(mdl, Prior(), 2)
 ```
 """
 function model(;
-        generation_time = _GENERATION_TIME,
-        shedding_dist = _SHEDDING_DIST,
-        incubation_dist = _INCUBATION_DIST,
+        generation_time,
+        shedding_dist,
+        incubation_dist,
         residence_dist = nothing,
         D_gen = 15.0,
         D_shedding = 38.0,
         D_incubation = 8.0,
         D_residence = nothing,
         Δd = 1.0,
-        lpc_prior = Normal(log(2.0e11), 0.5),
+        lpc_prior,
         n_gp = 164,
         rt = _default_rt(; n = n_gp),
         infection_noise = InfectionNoise(),
-        initial_infections = _INITIAL_INFECTIONS,
+        initial_infections,
         seeding = Normal(log(initial_infections), _SEEDING_SPREAD),
         infection_model = _infection_model(
             generation_time, rt, infection_noise, seeding;

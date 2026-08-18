@@ -1,8 +1,27 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it using these metadata."
+message: "If you use this software, please cite it using these metadata. EpiSewer.jl is a port of the EpiSewer R package, so please cite that and its paper as well."
 title: "EpiSewer.jl"
 type: software
 authors:
   - name: "seabbs-bot"
 repository-code: "https://github.com/seabbs/EpiSewer.jl"
 url: "https://github.com/seabbs/EpiSewer.jl"
+references:
+  - type: article
+    title: "Real-Time Estimation of Pathogen Transmission Dynamics from Wastewater"
+    doi: "10.1038/s41467-026-75380-3"
+    journal: "Nature Communications"
+    year: 2026
+    authors:
+      - family-names: "Lison"
+        given-names: "Adrian"
+      - family-names: "McLeod"
+        given-names: "Rachel E."
+      - family-names: "Huisman"
+        given-names: "Jana S."
+  - type: software
+    title: "EpiSewer: Estimate Epidemiological Parameters from Wastewater Measurements"
+    repository-code: "https://github.com/adrian-lison/EpiSewer"
+    authors:
+      - family-names: "Lison"
+        given-names: "Adrian"

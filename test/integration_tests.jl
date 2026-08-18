@@ -12,14 +12,14 @@ using TestItemRunner
 #   LatentDelay (shedding-load PMF)               -> delayed load
 #   FlowNormalize(LogNormalError())               -> observed concentrations
 #
-# `EpiSewer.model(...)` assembles this as `IDModel(infection_model,
+# `EpiSewer.model(; EpiSewer.example_assumptions()..., ...)` assembles this as `IDModel(infection_model,
 # observation_model)`.
 
 @testitem "EpiSewer.model assembles the default composable chain" begin
     using EpiSewer
     import ComposableTuringIDModels as CT
 
-    mdl = EpiSewer.model()  # no flow argument: flow is data
+    mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)  # no flow argument: flow is data
 
     @test mdl isa CT.IDModel
     @test mdl.infection_model isa CT.Renewal
@@ -44,17 +44,17 @@ end
 
     # Default chain: the incubation (D = 8) and shedding (D = 38) PMFs each
     # shorten the expected series by `length(pmf) - 1`.
-    @test EpiSewer.observation_lead_in(EpiSewer.model()) == (8 - 1) + (38 - 1)
+    @test EpiSewer.observation_lead_in(EpiSewer.model(; EpiSewer.example_assumptions()...)) == (8 - 1) + (38 - 1)
 
     # A chain with no delay at all needs no lead-in.
     obs = EpiSewer.FlowNormalize(EpiSewer.LogNormalError())
     @test EpiSewer.observation_lead_in(obs) == 0
     @test EpiSewer.observation_lead_in(
-        EpiSewer.model(observation_model = obs)
+        EpiSewer.model(; EpiSewer.example_assumptions()..., observation_model = obs)
     ) == 0
 
     # Adding the sewer residence delay lengthens the lead-in by its PMF.
-    res = EpiSewer.model(residence_dist = Gamma(2.0, 1.0), D_residence = 5.0)
+    res = EpiSewer.model(; EpiSewer.example_assumptions()..., residence_dist = Gamma(2.0, 1.0), D_residence = 5.0)
     @test EpiSewer.observation_lead_in(res) == (8 - 1) + (38 - 1) + (5 - 1)
 
     # An UncertainDelay holds its PMF length constant via `D`/`Δd`.
@@ -90,7 +90,7 @@ end
     DPPL = Turing.DynamicPPL
 
     d = EpiSewer.example_data()
-    mdl = EpiSewer.model()
+    mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)
     y = d.measurements.concentration
     flow = Vector{Float64}(d.flows.flow)
 
@@ -167,7 +167,7 @@ end
     @test !Base.isexported(EpiSewer, :model)
 
     d = EpiSewer.example_data()
-    mdl = EpiSewer.model()
+    mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)
     sub = 5:64
     y_obs = Vector{Union{Missing, Float64}}(d.measurements.concentration[sub])
     flow = Vector{Float64}(d.flows.flow[sub])
@@ -204,14 +204,14 @@ end
         initialisation = Normal(),
     )
     obs = EpiSewer.FlowNormalize(CT.NormalError())
-    mdl = EpiSewer.model(infection_model = inf, observation_model = obs)
+    mdl = EpiSewer.model(; EpiSewer.example_assumptions()..., infection_model = inf, observation_model = obs)
 
     @test mdl isa CT.IDModel
     @test mdl.infection_model === inf
     @test mdl.observation_model === obs
 
     # Overriding one component works: the other keeps its default.
-    mdl_override = EpiSewer.model(infection_model = inf)
+    mdl_override = EpiSewer.model(; EpiSewer.example_assumptions()..., infection_model = inf)
     @test mdl_override isa CT.IDModel
     @test mdl_override.infection_model === inf
     @test mdl_override.observation_model isa CT.LatentDelay
@@ -226,7 +226,7 @@ end
 
     # DirectInfections instead of the default Renewal.
     inf = CT.DirectInfections(; Z = CT.RandomWalk(), initialisation = Normal())
-    mdl = EpiSewer.model(infection_model = inf)
+    mdl = EpiSewer.model(; EpiSewer.example_assumptions()..., infection_model = inf)
 
     @test mdl isa CT.IDModel
     @test mdl.infection_model === inf

@@ -37,7 +37,7 @@ include("sewage.jl")
 include("models.jl")
 
 # Public API (not exported — call via EpiSewer.model(), etc.)
-public example_data, model, observation_lead_in
+public example_data, example_assumptions, model, observation_lead_in
 public gp_length_scale, crude_initial_infections, softplus_link
 public LogNormalError, LOD, DigitalPCRError, MeasurementOutliers, FlowNormalize
 public InfectionNoise, InfectionNoiseDraws

@@ -170,9 +170,8 @@ family. This matches EpiSewer's `noise_estimate` convention.
 
 `cv` sets the prior for ``\sigma`` — a constant `Distribution` or a length-`n`
 process, drawn through the `as_turing_submodel` seam like `NormalError`
-treats its `std` prior. It is sampled under the name `cv`, which keeps it clear
-of the bare `σ` that the Gaussian-process latent models use for their marginal
-standard deviation.
+treats its `std` prior. It is sampled under the name `cv`, which is what a
+coefficient of variation is.
 
 # Fields
 - `cv::S`: prior for the coefficient of variation `σ`.
@@ -195,11 +194,11 @@ LogNormalError(; cv = HalfNormal(0.1)) = LogNormalError(cv)
 @model function generate_observation_error_priors(
         obs_model::LogNormalError, y_t, Y_t
     )
-    # Sampled as `cv`, not `σ`: the Gaussian-process latent models sample a bare
-    # `σ` for their marginal standard deviation, and a second `σ` in the same
-    # chain silently overwrites the first (upstream ComposableTuringIDModels
-    # issue #268). `cv` is also the more accurate name for a coefficient of
-    # variation.
+    # `cv` is the accurate name for a coefficient of variation, and it also keeps
+    # this parameter clear of the bare `σ` the Gaussian-process latent models use
+    # for their marginal standard deviation. Prefixing resolves that collision
+    # too — a `PrefixLatentModel`, or a `CombineLatentModels`, which prefixes its
+    # components automatically — so this is naming rather than a workaround.
     cv ~ as_turing_submodel(obs_model.cv, length(Y_t); prefix = true)
     return (; cv = cv)
 end

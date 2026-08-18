@@ -26,7 +26,7 @@ using TestItemRunner
         return res ./ sum(res)
     end
 
-    gi = EpiSewer.model().infection_model.gen_int
+    gi = EpiSewer.model(; EpiSewer.example_assumptions()...).infection_model.gen_int
     r14 = r_shifted(3.0, 2.4, 14)
 
     # `Renewal` drops the lag-0 bin, so the interval starts at lag 1 as R's does.
@@ -47,7 +47,7 @@ end
 
 @testitem "shedding and incubation PMFs are the R assumptions" begin
     using EpiSewer
-    mdl = EpiSewer.model()
+    mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)
     # `LatentDelay` stores the PMF reversed.
     incubation = reverse(mdl.observation_model.delay)
     shedding = reverse(mdl.observation_model.model.model.delay)
@@ -72,7 +72,7 @@ end
     import ComposableTuringIDModels as CT
 
     # A continuous distribution is discretised by the component.
-    from_dist = EpiSewer.model(shedding_dist = Gamma(2.0, 1.0), D_shedding = 6.0)
+    from_dist = EpiSewer.model(; EpiSewer.example_assumptions()..., shedding_dist = Gamma(2.0, 1.0), D_shedding = 6.0)
     @test length(from_dist.observation_model.model.model.delay) == 6
 
     # An already discretised PMF is used as given (no `D` needed). `Renewal`
@@ -80,7 +80,7 @@ end
     # vector generation interval is taken verbatim — the caller owns the
     # no-same-day-transmission convention.
     pmf = fill(0.25, 4)
-    from_vec = EpiSewer.model(shedding_dist = pmf, generation_time = pmf)
+    from_vec = EpiSewer.model(; EpiSewer.example_assumptions()..., shedding_dist = pmf, generation_time = pmf)
     @test reverse(from_vec.observation_model.model.model.delay) ≈ pmf
     @test from_vec.infection_model.gen_int ≈ pmf
 
@@ -94,9 +94,10 @@ end
     # renewal modifier has to be composed onto an already discretised interval,
     # so the two cannot be combined (ComposableTuringIDModels issue #269). The
     # combination is rejected rather than silently dropping the noise.
-    @test_throws ArgumentError EpiSewer.model(generation_time = uncertain)
+    @test_throws ArgumentError EpiSewer.model(; EpiSewer.example_assumptions()..., generation_time = uncertain)
 
-    from_prior = EpiSewer.model(
+    from_prior = EpiSewer.model(;
+        EpiSewer.example_assumptions()...,
         shedding_dist = uncertain, incubation_dist = uncertain,
         generation_time = uncertain, infection_noise = nothing,
     )
@@ -109,7 +110,7 @@ end
     using EpiSewer
     import ComposableTuringIDModels as CT
 
-    mdl = EpiSewer.model()
+    mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)
     # Outermost first: the outer wrapper transforms the expected series first,
     # so infections reach symptom onset before the load scaling and the
     # shedding profile (Stan: `lambda = convolve(inc_rev, I)`).
@@ -124,7 +125,7 @@ end
     # a point mass at same-day arrival, i.e. an identity convolution. Supplying
     # one inserts it between the shedding delay and the flow division, as Stan
     # does.
-    with_res = EpiSewer.model(residence_dist = [0.7, 0.3])
+    with_res = EpiSewer.model(; EpiSewer.example_assumptions()..., residence_dist = [0.7, 0.3])
     inner = with_res.observation_model.model.model.model
     @test inner isa CT.LatentDelay
     @test reverse(inner.delay) ≈ [0.7, 0.3]
@@ -142,9 +143,9 @@ end
     n = length(y)
 
     Random.seed!(11)
-    with_inc = CT.as_turing_model(EpiSewer.model(), (y = y, flow = flow), n)()
+    with_inc = CT.as_turing_model(EpiSewer.model(; EpiSewer.example_assumptions()...), (y = y, flow = flow), n)()
     without = CT.as_turing_model(
-        EpiSewer.model(incubation_dist = nothing), (y = y, flow = flow), n
+        EpiSewer.model(; EpiSewer.example_assumptions()..., incubation_dist = nothing), (y = y, flow = flow), n
     )()
 
     @test all(isfinite, with_inc.expected_y_t)

@@ -166,7 +166,7 @@ end
     using EpiSewer, Distributions
     import ComposableTuringIDModels as CT
 
-    idm = EpiSewer.model()
+    idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
     inf = idm.infection_model
     # R's `R_estimate_gp()` sums a short-term and a long-term Matern-3/2 GP,
     # then applies its `inv_softplus` link to the sum.
@@ -201,7 +201,7 @@ end
     import ComposableTuringIDModels as CT
     import Turing: DynamicPPL
 
-    idm = EpiSewer.model()
+    idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
     d = EpiSewer.example_data()
     flow = Vector{Float64}(d.flows.flow)
     y = d.measurements.concentration
@@ -293,7 +293,7 @@ end
     using EpiSewer, Distributions, Random
     import ComposableTuringIDModels as CT
 
-    idm = EpiSewer.model()
+    idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
     # The link sits inside the `rt` model, so `Renewal`'s own transformation is
     # left as `exp` and keeps seeding the initial incidence on the log scale.
     @test idm.infection_model.rt isa CT.TransformLatentModel
