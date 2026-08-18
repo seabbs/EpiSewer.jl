@@ -312,17 +312,22 @@ end
 end
 
 @testitem "the fast draw agrees with the generic moment-matched path" begin
-    using EpiSewer, Distributions
+    using EpiSewer, Distributions, ReparameterisedDistributions
 
     # `_draw` short-circuits the generic construct-then-quantile path for the
     # two closed-form families. It exists for speed, so it must agree exactly.
     for m in (1.0e-3, 1.0, 500.0, 1.0e5), s in (0.1, 1.0, 50.0), z in (-3.0, 0.0, 2.5)
         s >= m && continue
-        generic_ln = EpiSewer._noncentred(
-            EpiSewer._moment_match(LogNormal, m, s), z
-        )
-        @test EpiSewer._draw(LogNormal, m, s, z) ≈ generic_ln rtol = 1.0e-12
-        generic_n = EpiSewer._noncentred(EpiSewer._moment_match(Normal, m, s), z)
-        @test EpiSewer._draw(Normal, m, s, z) ≈ generic_n rtol = 1.0e-12
+        # The generic path spelled out: reparameterise onto the moments, then
+        # invert through the normal CDF.
+        p = cdf(Normal(), z)
+        @test EpiSewer._draw(LogNormal, m, s, z) ≈ quantile(
+            reparameterise(LogNormal; mean = m, sd = s, check_args = false), p
+        ) rtol = 1.0e-12
+        # `Normal` is already native in (mean, sd), so it has no registered
+        # reparameterisation; the closed form is checked against the native
+        # distribution's own inverse instead.
+        @test EpiSewer._draw(Normal, m, s, z) ≈ quantile(Normal(m, s), p) rtol =
+            1.0e-12
     end
 end

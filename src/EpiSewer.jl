@@ -20,7 +20,7 @@ import ComposableTuringIDModels: as_turing_model, as_turing_submodel,
     generate_observation_error_priors, observation_error,
     modifier_init_state, apply_modifier
 using EpiAwareADTools: EpiAwareADTools
-using ReparameterisedDistributions: reparameterise, to_native
+using ReparameterisedDistributions: reparameterise
 using CSV: CSV
 using DataFrames: DataFrames, DataFrame
 

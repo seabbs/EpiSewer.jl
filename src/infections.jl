@@ -1,39 +1,32 @@
 # Infection components: stochastic infections (`infection_noise_estimate`).
 
-# The moment-matched noise distribution. `to_native` is
-# ReparameterisedDistributions' own moment solve, so any family it registers for
-# `(:mean, :sd)` works here — `LogNormal`, `Gamma`, `InverseGaussian` and the
-# rest — and the solve is theirs rather than a re-derivation.
+# The non-centred draw: map a standard normal onto the family whose mean and
+# standard deviation are the negative binomial's.
 #
-# `Normal` is native in `(:mean, :sd)` already, which is why the package does not
-# register it. Dispatching here rather than adding a `to_native` method keeps the
-# special case ours: a method on their function for their type would be piracy.
-_moment_match(::Type{Normal}, mean, sd) = Normal(mean, sd)
-_moment_match(family, mean, sd) = to_native(family, Val{(:mean, :sd)}(), (mean, sd))
-
-# The whole draw in one step, for the families whose moment solve and quantile
-# are both closed form. This exists for speed rather than for correctness: the
-# generic path constructs (and validates) a distribution object per time step
-# inside the differentiated scan, which is 164 allocations per gradient on the
-# example series and roughly doubles its cost. `_draw` and the generic fallback
-# agree to machine precision, which `test/infections.jl` asserts.
+# `reparameterise` is ReparameterisedDistributions' caller-facing verb — it
+# returns a `Distribution` parameterised by its moments, converts to the native
+# family through an exact closed form, and stays differentiable. (`to_native` is
+# the family-registration hook rather than the API to call.) `check_args = false`
+# routes an invalid moment pair to a `-Inf` score instead of a `DomainError`
+# mid-gradient.
+#
+# The two location-scale families are written out rather than routed through it,
+# for two reasons. The generic path round-trips through `cdf` and `quantile`,
+# which loses the tails: a draw five standard deviations out underflows `cdf` to
+# zero and comes back as the support's endpoint, and a sampler does reach five
+# standard deviations. And it constructs a distribution per time step inside the
+# differentiated scan, which is 164 allocations per gradient on the example
+# series. `test/infections.jl` asserts the closed forms agree with the generic
+# path to a relative tolerance of 1e-12.
 function _draw(::Type{LogNormal}, mean, sd, z)
     σ² = log1p((sd / mean)^2)
     return exp(log(mean) - σ² / 2 + z * sqrt(σ²))
 end
 _draw(::Type{Normal}, mean, sd, z) = mean + sd * z
-_draw(family, mean, sd, z) = _noncentred(_moment_match(family, mean, sd), z)
-
-# The non-centred draw: map a standard normal onto the matched distribution.
-#
-# Both location-scale cases are written out rather than routed through the
-# generic fallback, because the fallback round-trips through `cdf` and
-# `quantile` and loses the tails: a draw five standard deviations out underflows
-# `cdf` to 0 and comes back as the support's endpoint. A sampler does reach five
-# standard deviations.
-_noncentred(d::Normal, z) = d.μ + d.σ * z
-_noncentred(d::LogNormal, z) = exp(d.μ + d.σ * z)
-_noncentred(d, z) = quantile(d, cdf(Normal(), z))
+function _draw(family, mean, sd, z)
+    d = reparameterise(family; mean = mean, sd = sd, check_args = false)
+    return quantile(d, cdf(Normal(), z))
+end
 
 @doc raw"""
     InfectionNoise{D, X, C} <: AbstractRenewalModifier
@@ -59,7 +52,7 @@ is the overdispersion, and ``F^{-1}_{m, s}`` is the quantile function of `dist`
 matched to mean ``m`` and standard deviation ``s``. Those are the moments of a
 negative binomial with mean ``\iota_t`` and overdispersion ``\xi``, so the draw
 is an approximation to one; ``\xi = 0`` leaves Poisson variance. The moment solve
-is `ReparameterisedDistributions.to_native`, so any family registered for
+is `ReparameterisedDistributions.reparameterise`, so any family it supports for
 `(:mean, :sd)` can be passed.
 
 For the two location-scale families the transformation is exact and closed form,
