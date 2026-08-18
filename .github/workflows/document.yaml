@@ -27,5 +27,14 @@ jobs:
       contents: write
       statuses: write
       pull-requests: write
+    # The README's worked example fits the model inside the docs build, so the
+    # build is dominated by sampling rather than by rendering: about 25 minutes
+    # locally at the committed settings and longer on a CI runner. The reusable
+    # workflow defaults to 45, which this can exceed.
+    # NOTE: as with the permissions block above, `EpiAwarePackageTools.update`
+    # regenerates this file and may drop this input; re-apply if the Documenter
+    # job starts timing out.
+    with:
+      timeout_minutes: 90
     uses: EpiAware/.github/.github/workflows/documentation.yml@8c1e09003b9cf0d2eb3cbec7aa726855bb365ac5
     secrets: inherit  # pragma: allowlist secret

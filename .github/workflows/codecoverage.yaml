@@ -21,4 +21,11 @@ jobs:
       # CODECOV_TOKEN cannot upload on a protected branch, so CI goes red as
       # a reminder to add the secret (repo or org).
       fail_ci_if_error: true
-    secrets: inherit  # pragma: allowlist secret
+    # Passed explicitly rather than by `secrets: inherit`. With `inherit` the
+    # reusable workflow saw an empty token ("Token length: 0") even with the
+    # repository secret set, and Codecov rejects a tokenless upload on a
+    # protected branch. Naming it makes the propagation unambiguous.
+    # NOTE: `EpiAwarePackageTools.update` regenerates this file and may restore
+    # `secrets: inherit`; re-apply if coverage starts failing on the token again.
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}  # pragma: allowlist secret
