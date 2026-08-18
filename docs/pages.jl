@@ -29,6 +29,7 @@ pages = [
     # docs_config.jl.
     "Getting started" => [
         "Overview" => "getting-started/index.md",
+        "Adapting the model" => "getting-started/adapting-the-model.md",
         "Case surveillance" => "getting-started/case-surveillance.md",
     ],
     "API reference" => [

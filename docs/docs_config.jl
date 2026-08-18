@@ -194,6 +194,7 @@ const HISTORY_REGRESSION_THRESHOLD = 1.1
 # in the nav; the kit itself writes no tutorial page.
 const PACKAGE_TUTORIALS = Pair{String, String}[
     "Adapting the model" => "getting-started/adapting-the-model.md",
+    "Case surveillance" => "getting-started/case-surveillance.md",
 ]
 
 # Whole extra top-level nav groups the package owns (e.g. "Tools", "Guide",
