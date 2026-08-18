@@ -66,14 +66,17 @@ flow = Vector{Float64}(d.flows.flow)
 
 ### Assumptions
 
-Estimating transmission from concentrations needs four assumptions about the disease.
+Estimating transmission from concentrations needs assumptions the data cannot supply.
 
 - the generation time
 - the load shed over time by an average infected individual
 - the incubation period, which puts that profile on the infection timescale
+- the load shed per case, which sets the scale of the whole series
 - the scale of infections at the start of the series
 
-These are disease-specific and usually taken from the literature, so `EpiSewer.model` asks for them rather than assuming them.
+The first three travel with the pathogen and are usually taken from the literature.
+The last two are properties of this site and series.
+`EpiSewer.model` asks for all five rather than assuming them, as EpiSewer's own `sewer_assumptions` asks for the first four.
 `example_assumptions` holds the set the EpiSewer README uses for SARS-CoV-2 in Zurich.
 
 ```julia

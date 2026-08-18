@@ -44,7 +44,7 @@ idm = EpiSewer.model(; assumptions...)
 lead_in = EpiSewer.observation_lead_in(idm)
 n = length(y) + lead_in
 
-lpc = exp(median(assumptions.lpc_prior))
+lpc = assumptions.load_per_case
 retune = (
     initial_infections = EpiSewer.crude_initial_infections(y, flow, lpc),
     n_gp = n,
@@ -404,7 +404,7 @@ function measurement_chain(error_model)
         )
     )
     obs = CT.LatentDelay(obs, assumptions.shedding_dist; D = 38.0)
-    obs = CT.Ascertainment(obs, assumptions.lpc_prior)
+    obs = CT.Ascertainment(obs, CT.FixedIntercept(log(lpc)))
     obs = EpiSewer.LoadVariation(obs; cv = 1.0)
     return CT.LatentDelay(obs, assumptions.incubation_dist; D = 8.0)
 end

@@ -27,7 +27,7 @@ The table below lists every model component, its role, and the ecosystem compone
 | sewage | `residence_dist_assume` | Convolve the shedding signal through a sewer residence-time distribution | `LatentDelay`, via `model()`'s `residence_dist` |
 | shedding | `incubation_dist_assume` | Incubation period, so a shedding profile indexed from symptom onset can be applied to infections | `LatentDelay`, via `model()`'s `incubation_dist` |
 | shedding | `shedding_dist_assume` / `shedding_dist_estimate` | Shedding load profile, assumed or inferred | `LatentDelay` with the shedding load distribution, or with an `UncertainDelay` when its parameters carry priors |
-| shedding | `load_per_case_assume` / `load_per_case_calibrate` | Load shed per case | `Ascertainment` scaling `I_t` by `exp(lpc)` at the observation stage |
+| shedding | `load_per_case_assume` / `load_per_case_calibrate` | Load shed per case | `Ascertainment` over a `FixedIntercept`, scaling `I_t` at the observation stage |
 | shedding | `load_variation_estimate` | Individual-level shedding-load overdispersion | `LoadVariation` in `src/shedding.jl`, in the default chain outside the load-per-case step. R's `gamma_sum_log_approx`: a normal draw at the gamma's moments, floored by a softplus |
 | infections | `generation_dist_assume` | Generation-time distribution between infections | `Renewal(generation_time = ...)`, which discretises a continuous distribution itself and drops the lag-0 bin |
 | infections | `R_estimate_rw`, `R_estimate_gp` and six further smoothers | Flexible `R_t` smoothing | `RandomWalk` for the random walk and `HilbertSpaceGP` / `ExactGP` for the GP, both reachable through `model()`'s `rt`, with `CombineLatentModels` summing GP terms and `TransformLatentModel` applying a link. `AR`, `MA` and `DiffLatentModel` are the nearest analogues of the spline, piecewise, exponential-smoothing and smooth-derivative options |
@@ -45,7 +45,9 @@ Most of the wastewater model is existing `ComposableTuringIDModels.jl` component
 The infection process (`Renewal`), `R_t` smoothing (`RandomWalk`, `HilbertSpaceGP`), discrete delays (`LatentDelay`) and observation error (`NormalError`, `NegativeBinomialError`) all come from there.
 
 Two of the wastewater-specific pieces are compositions with no new struct at all.
-Load-per-case calibration is an `Ascertainment` scaling `I_t` by `exp(lpc)`.
+Load-per-case calibration is an `Ascertainment` scaling `I_t` by the load shed per case.
+R calibrates that value once outside the sampler and passes it as data, so `model()` takes a number and wraps it in a `FixedIntercept`.
+A prior may be passed instead, which infers it.
 The sewer residence time is a `LatentDelay`, and R's default `residence_dist = c(1)` is a point mass at same-day arrival, so an identity convolution.
 
 This package adds seven `ComposableTuringIDModels.jl`-compatible structs.

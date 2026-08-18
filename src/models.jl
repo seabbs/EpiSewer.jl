@@ -26,10 +26,10 @@ Returns a `NamedTuple` ready to splat into [`model`](@ref EpiSewer.model):
 - `shedding_dist`: `Gamma(0.929639, 7.241397)`, relative to symptom onset.
 - `incubation_dist`: `Gamma(8.5, 0.4)`, which puts the shedding profile on the
   infection timescale.
-- `lpc_prior`: log-scale prior on the load shed per case. EpiSewer calibrates
-  this from the case counts rather than assuming it (`load_per_case_calibrate()`
-  is its default), and 1.1e11 gc/case is what its `suggest_load_per_case` returns
-  for this series.
+- `load_per_case`: 1.1e11 gc/case, fixed as R fixes it. EpiSewer calibrates the
+  value from case counts rather than assuming it
+  (`load_per_case_calibrate()` is its default), and 1.1e11 is what its
+  `suggest_load_per_case` returns for this series.
 - `outlier_scale`: the concentration-scale size of one unit of outlier spike,
   R's `load_mean / flow_median`. That is 1.1e11 gc/case over this series' median
   flow of 1.545e11 mL/day.
@@ -49,7 +49,7 @@ example_assumptions() = (
     generation_time = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1,
     shedding_dist = Gamma(0.929639, 7.241397),
     incubation_dist = Gamma(8.5, 0.4),
-    lpc_prior = Normal(log(1.1e11), 0.5),
+    load_per_case = 1.1e11,
     initial_infections = 912.9,
     outlier_scale = 0.7119,
 )
@@ -201,8 +201,7 @@ default model for a different series.
 - `concentration`: the measured concentrations (gc/mL), in time order.
   `missing` entries are skipped.
 - `flow`: the daily flow (mL/day), in time order.
-- `load_per_case`: the load shed per case (gc/case), the median of
-  `model()`'s `lpc_prior` on the natural scale.
+- `load_per_case`: the load shed per case (gc/case), as passed to `model()`.
 - `days`: the length of the leading window averaged over. EpiSewer uses the
   first week.
 
@@ -384,6 +383,22 @@ observation_lead_in(mdl::IDModel) = _lead_in(mdl.observation_model)
 
 observation_lead_in(obs::AbstractObservationModel) = _lead_in(obs)
 
+# R fixes the load shed per case: `load_mean` is declared in the `data` block of
+# `EpiSewer_main.stan`, and `load_per_case_calibrate()` computes it once outside
+# the sampler by regressing loads on case counts. Nothing in R's `parameters`
+# block corresponds to it.
+#
+# So a `Real` becomes a `FixedIntercept` and costs no parameter. That matters
+# more than the saved parameter: the likelihood constrains only the product of
+# this scaling and the infection level, so sampling both leaves a ridge along
+# `log(load_per_case) + log(level) = constant` that only the priors locate a
+# position on.
+#
+# A prior is still accepted, for a series where the load per case is genuinely
+# unknown. It is inference R cannot express, and the ridge above is the price.
+_load_per_case(x::Real) = FixedIntercept(log(x))
+_load_per_case(x) = x
+
 # The default observation chain, assembled innermost-first so the outermost
 # wrapper transforms the expected series first, in Stan's order:
 #
@@ -393,7 +408,7 @@ observation_lead_in(obs::AbstractObservationModel) = _lead_in(obs)
 #   residence   `pi_log = log_convolve(residence_rev_log, omega_log)`
 #   flow        `kappa_log = pi_log - flow_log`
 function _observation_model(
-        lpc_prior; shedding_dist, incubation_dist, residence_dist,
+        load_per_case; shedding_dist, incubation_dist, residence_dist,
         D_shedding, D_incubation, D_residence, Δd, outlier_scale, load_cv
     )
     # Outliers sit immediately inside the flow division, so the spike lands on
@@ -403,7 +418,7 @@ function _observation_model(
     obs = FlowNormalize(inner)
     obs = _delay(obs, residence_dist; D = D_residence, Δd = Δd)
     obs = _delay(obs, shedding_dist; D = D_shedding, Δd = Δd)
-    obs = Ascertainment(obs, lpc_prior)
+    obs = Ascertainment(obs, _load_per_case(load_per_case))
     # Individual-level load variation applies to the shedding-onset series,
     # before the per-case load scaling, as `zeta_log` does in Stan.
     isnothing(load_cv) || (obs = LoadVariation(obs; cv = load_cv))
@@ -411,7 +426,7 @@ function _observation_model(
 end
 
 """
-    model(; generation_time, shedding_dist, incubation_dist, lpc_prior,
+    model(; generation_time, shedding_dist, incubation_dist, load_per_case,
         initial_infections, residence_dist = nothing, D_gen = 15.0,
         D_shedding = 38.0, D_incubation = 8.0, D_residence = nothing,
         Δd = 1.0, n_gp = 164, rt = _default_rt(; n = n_gp),
@@ -452,7 +467,11 @@ swap points. The observed series and the daily flow are both data, passed at
   horizons and bin width used when a delay input is a continuous distribution.
   They match R's `maxX` values and are ignored for a PMF vector or a prior model
   (which carries its own horizon).
-- `lpc_prior`: log-scale prior on the load shed per case (gc/case).
+- `load_per_case`: the load shed per case (gc/case). A number is fixed, which
+  is what R does: `load_mean` is data in its Stan model, calibrated once from
+  case counts. A prior instead infers it, which R cannot express — at the cost
+  of a ridge, since the likelihood pins only the product of this scaling and the
+  infection level.
 - `rt`: the `R_t` prior. Defaults to EpiSewer's `R_estimate_gp()`: the **sum** of
   a short-term (21 ± 3.5 days, magnitude 0.125) and a long-term (84 ± 7 days,
   magnitude 0.25) Matérn-3/2 `HilbertSpaceGP`, summed by `CombineLatentModels`
@@ -511,7 +530,7 @@ function model(;
         D_incubation = 8.0,
         D_residence = nothing,
         Δd = 1.0,
-        lpc_prior,
+        load_per_case,
         n_gp = 164,
         rt = _default_rt(; n = n_gp),
         infection_noise = InfectionNoise(),
@@ -524,7 +543,7 @@ function model(;
             D_gen = D_gen, Δd = Δd
         ),
         observation_model = _observation_model(
-            lpc_prior;
+            load_per_case;
             shedding_dist = shedding_dist,
             incubation_dist = incubation_dist,
             residence_dist = residence_dist,

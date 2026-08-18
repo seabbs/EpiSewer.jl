@@ -476,7 +476,7 @@ EpiSewer's README fits, and the full series gives a larger value.
 
 ```@example gs
 crude = EpiSewer.crude_initial_infections(
-    y, flow, exp(mean(assumptions.lpc_prior))
+    y, flow, assumptions.load_per_case
 )
 tuned = EpiSewer.model(; assumptions..., initial_infections = crude)
 (
@@ -524,7 +524,9 @@ using Distributions: Gamma
 function chain(error_model)
     obs = EpiSewer.FlowNormalize(error_model)
     obs = CT.LatentDelay(obs, assumptions.shedding_dist; D = 38.0)
-    obs = CT.Ascertainment(obs, assumptions.lpc_prior)
+    obs = CT.Ascertainment(
+        obs, CT.FixedIntercept(log(assumptions.load_per_case))
+    )
     obs = EpiSewer.LoadVariation(obs)
     return CT.LatentDelay(obs, assumptions.incubation_dist; D = 8.0)
 end

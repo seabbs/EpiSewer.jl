@@ -29,7 +29,10 @@ Place `FlowNormalize` **inside** the chain, after the load-scaling and delay
 components and before the observation-error model, so the division is applied
 to the delayed load:
 
-    Ascertainment(LatentDelay(FlowNormalize(LogNormalError(), ...), shed), lpc)
+    Ascertainment(
+        LatentDelay(FlowNormalize(LogNormalError(), ...), shed),
+        FixedIntercept(log(load_per_case)),
+    )
 
 # Fields
 - `error_model`: the underlying observation model, operating on expected

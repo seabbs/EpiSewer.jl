@@ -45,9 +45,10 @@ R's model disagree here; this follows the model.
   concentration scale. Both of those are fixed quantities in Stan — `load_mean`
   is declared in the data block and `flow_median_log` is transformed data — so a
   construction-time constant is faithful to R rather than an approximation of
-  it. It is an approximation only relative to *this* package's choice to sample
-  `exp(lpc)`: an `Ascertainment` `transform` cannot see sampled parameters, so
-  set `scale` from the load-per-case prior median over the median flow.
+  it. `model()` fixes the load per case for the same reason, so the two agree.
+  Passing a *prior* for the load per case instead makes this an approximation:
+  an `Ascertainment` `transform` cannot see sampled parameters, so `scale` is
+  set from that prior's median while the scaling itself varies.
 - `spiked`: the composed `Ascertainment`, built once here rather than inside
   `as_turing_model`. `Ascertainment`'s constructor validates `transform` with
   `hasmethod`, which lowers to a `Core._hasmethod` foreigncall that Mooncake
@@ -60,7 +61,7 @@ Put it immediately inside [`FlowNormalize`](@ref EpiSewer.FlowNormalize), so the
 spike is added after the flow division and therefore lands on the concentration
 scale, exactly where Stan adds it:
 
-    scale = exp(lpc_prior_median) / flow_median
+    scale = load_per_case / flow_median
     FlowNormalize(MeasurementOutliers(LogNormalError(); scale = scale))
 
 # Example

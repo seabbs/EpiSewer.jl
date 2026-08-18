@@ -157,3 +157,33 @@ end
     # than an absolute length, which is still wrong for its own reason (#18).
     @test length(without.expected_y_t) - length(with_inc.expected_y_t) == 7
 end
+
+# R fixes the load shed per case: `load_mean` is data in `EpiSewer_main.stan`,
+# calibrated once outside the sampler, and R's `parameters` block has no
+# counterpart. Sampling it would leave a ridge, since the likelihood pins only
+# the product of that scaling and the infection level.
+@testitem "the load per case is fixed by default, inferable on request" begin
+    using EpiSewer
+    import ComposableTuringIDModels as CT
+    # Reached through Turing rather than declared: DynamicPPL is not a direct
+    # test dependency and this is the only test that needs a parameter count.
+    using Turing: DynamicPPL
+    using Distributions: Normal
+
+    a = EpiSewer.example_assumptions()
+    @test a.load_per_case isa Real
+
+    d = EpiSewer.example_data()
+    y = d.measurements.concentration
+    flow = Vector{Float64}(d.flows.flow)
+    function dimension(lpc)
+        idm = EpiSewer.model(; a..., load_per_case = lpc)
+        n = length(y) + EpiSewer.observation_lead_in(idm)
+        mdl = CT.as_turing_model(idm, (y = y, flow = flow), n)
+        return length(DynamicPPL.VarInfo(mdl)[:])
+    end
+
+    # A prior costs exactly one parameter more than the fixed default.
+    inferred = dimension(Normal(log(a.load_per_case), 0.5))
+    @test inferred == dimension(a.load_per_case) + 1
+end
