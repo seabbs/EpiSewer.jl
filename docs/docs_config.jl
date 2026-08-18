@@ -103,14 +103,13 @@ const ORG_BRANDING = false
 # Regexes for URLs to skip during the (full-build) linkcheck, e.g. a page
 # published by a separate workflow that is not yet live.
 #
-# This package's own rendered documentation is exactly that case, and it is
-# circular: the README badges and the Documentation section link to the published
-# site, the site does not exist until the Documenter workflow publishes it, and
-# the workflow cannot publish while its own linkcheck fails on those links. Both
-# hosts are listed because which one is canonical is still open.
+# This package's documentation is published at
+# https://samabbott.co.uk/EpiSewer.jl/ and `dev/` resolves. Only `stable/` does
+# not: Documenter creates it from a tagged release, and this package has not
+# made one yet, so the README's stable badge and links 404 until it does.
+# Remove this entry after the first release.
 const LINKCHECK_IGNORE = Regex[
-    r"^https://epiaware\.org/EpiSewer\.jl",
-    r"^https://seabbs\.github\.io/EpiSewer\.jl",
+    r"^https://samabbott\.co\.uk/EpiSewer\.jl/stable",
 ]
 
 # README -> index.md link rewrites: `from => to` pairs applied line by line,
@@ -120,7 +119,7 @@ const LINKCHECK_IGNORE = Regex[
 # home page the same link becomes an in-site cross-reference, which resolves
 # whether or not the site is published yet.
 const INDEX_REWRITES = Pair{String, String}[
-    "https://epiaware.org/EpiSewer.jl/stable/components/model-components" =>
+    "https://samabbott.co.uk/EpiSewer.jl/stable/components/model-components" =>
         "@ref model-components",
 ]
 
