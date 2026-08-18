@@ -11,6 +11,19 @@
 _moment_match(::Type{Normal}, mean, sd) = Normal(mean, sd)
 _moment_match(family, mean, sd) = to_native(family, Val{(:mean, :sd)}(), (mean, sd))
 
+# The whole draw in one step, for the families whose moment solve and quantile
+# are both closed form. This exists for speed rather than for correctness: the
+# generic path constructs (and validates) a distribution object per time step
+# inside the differentiated scan, which is 164 allocations per gradient on the
+# example series and roughly doubles its cost. `_draw` and the generic fallback
+# agree to machine precision, which `test/infections.jl` asserts.
+function _draw(::Type{LogNormal}, mean, sd, z)
+    σ² = log1p((sd / mean)^2)
+    return exp(log(mean) - σ² / 2 + z * sqrt(σ²))
+end
+_draw(::Type{Normal}, mean, sd, z) = mean + sd * z
+_draw(family, mean, sd, z) = _noncentred(_moment_match(family, mean, sd), z)
+
 # The non-centred draw: map a standard normal onto the matched distribution.
 #
 # Both location-scale cases are written out rather than routed through the
@@ -200,8 +213,7 @@ function apply_modifier(mod::InfectionNoiseDraws, incidence, t)
     # The negative binomial's coefficient of variation,
     # `sqrt(iota (1 + iota ξ²)) / iota`, simplified.
     cv = _soft_upper(sqrt(inv(ι) + ξ^2), mod.cv_cap, mod.cv_sharpness)
-    d = _moment_match(mod.dist, ι, cv * ι)
-    return _noncentred(d, mod.raw[t + 1]), t + 1
+    return _draw(mod.dist, ι, cv * ι, mod.raw[t + 1]), t + 1
 end
 
 @doc raw"""
