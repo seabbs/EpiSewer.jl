@@ -35,8 +35,8 @@ Returns a `NamedTuple` ready to splat into [`model`](@ref EpiSewer.model):
   flow of 1.545e11 mL/day.
 - `initial_infections`: the crude seeding estimate, from
   [`crude_initial_infections`](@ref EpiSewer.crude_initial_infections) on the
-  thinned series at that load per case. Matches R's `initial_cases_crude` to
-  one decimal place.
+  thinned series at that load per case. Equals R's `initial_cases_crude` for
+  this series, 816.8415, to four decimal places.
 
 # Examples
 ```@example model
@@ -50,7 +50,7 @@ example_assumptions() = (
     shedding_dist = Gamma(0.929639, 7.241397),
     incubation_dist = Gamma(8.5, 0.4),
     load_per_case = 1.1e11,
-    initial_infections = 912.9,
+    initial_infections = 816.8415,
     outlier_scale = 0.7119,
 )
 
@@ -202,8 +202,10 @@ default model for a different series.
   `missing` entries are skipped.
 - `flow`: the daily flow (mL/day), in time order.
 - `load_per_case`: the load shed per case (gc/case), as passed to `model()`.
-- `days`: the length of the leading window averaged over. EpiSewer uses the
-  first week.
+- `days`: the length of the window averaged over, counted from the first
+  measurement rather than from the first row, so a series padded with leading
+  unmeasured days gives the same answer as one that starts at its first
+  measurement. EpiSewer uses the first week.
 
 # Examples
 ```@example model
@@ -225,13 +227,21 @@ That is the value
 series whose measurements run from 145 to 3200 gc/mL.
 """
 function crude_initial_infections(concentration, flow, load_per_case; days = 7)
-    head = concentration[1:min(days, length(concentration))]
-    observed = collect(skipmissing(head))
-    isempty(observed) && throw(
-        ArgumentError("no measured concentration in the first $days days")
+    # Anchor the window at the first measurement, not at the first row. R's
+    # time axis starts there, because its measurement table holds only the days
+    # it sampled — so R's `flow[1:7]` is the seven days from the first
+    # measurement. A frame padded to a full calendar, as this package's example
+    # data is, would otherwise average concentrations from one window and flow
+    # from another. On the shipped series that offset alone moved the estimate
+    # by 11.8%.
+    start = findfirst(!ismissing, concentration)
+    isnothing(start) && throw(
+        ArgumentError("no measured concentration to seed from")
     )
+    stop = min(start + days - 1, length(concentration))
+    observed = collect(skipmissing(concentration[start:stop]))
     c = sum(observed) / length(observed)
-    q = flow[1:min(days, length(flow))]
+    q = flow[start:min(stop, length(flow))]
     return 0.1 + c * (sum(q) / length(q)) / load_per_case
 end
 

@@ -60,7 +60,7 @@ retune = (
 `initial_infections` centres the seeding prior, and
 `crude_initial_infections` converts the concentrations measured in the first
 week into a case count at the assumed load per case.
-Here it is 1881 against the shipped 913, because this window starts partway
+Here it is 1881 against the shipped 817, because this window starts partway
 through an epidemic rather than at the start of the series.
 `outlier_scale` is the concentration equivalent of one unit of outlier spike,
 the load per case over the median flow, so it moves with the site's flow.

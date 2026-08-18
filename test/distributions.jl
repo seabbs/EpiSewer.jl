@@ -187,3 +187,35 @@ end
     inferred = dimension(Normal(log(a.load_per_case), 0.5))
     @test inferred == dimension(a.load_per_case) + 1
 end
+
+# The seeding estimate must anchor its window at the first measurement, as R
+# does: R's measurement table holds only sampled days, so its `flow[1:7]` runs
+# from the first measurement. Averaging concentrations from one window and flow
+# from another moved the shipped value by 11.8%.
+@testitem "crude_initial_infections anchors its window at the first measurement" begin
+    using EpiSewer
+    using Dates: dayabbr
+
+    d = EpiSewer.example_data()
+    flow = Vector{Float64}(d.flows.flow)
+    thin = [
+        dayabbr(t) in ("Mon", "Thu") ? c : missing
+            for (t, c) in zip(d.measurements.date, d.measurements.concentration)
+    ]
+    # R's `initial_cases_crude` for this series, read from its own generated
+    # init file: exp(iota_log_seed_intercept - log(10)/8).
+    @test EpiSewer.crude_initial_infections(thin, flow, 1.1e11) ≈ 816.8415 atol = 1.0e-4
+    @test EpiSewer.example_assumptions().initial_infections ≈ 816.8415 atol = 1.0e-4
+
+    # Padding the front with unmeasured days must not change the answer: that
+    # equivalence is the property the anchoring buys.
+    pad = 5
+    padded = vcat(fill(missing, pad), thin)
+    padded_flow = vcat(fill(flow[1], pad), flow)
+    @test EpiSewer.crude_initial_infections(padded, padded_flow, 1.1e11) ≈
+        EpiSewer.crude_initial_infections(thin, flow, 1.1e11)
+
+    @test_throws ArgumentError EpiSewer.crude_initial_infections(
+        fill(missing, 10), flow, 1.1e11
+    )
+end
