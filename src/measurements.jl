@@ -125,6 +125,74 @@ function as_turing_model(m::DigitalPCRError, y_t, Y_t)
 end
 
 @doc raw"""
+    GammaError{S <: PriorLike}
+
+A gamma observation-error model with an inferred coefficient of variation.
+
+This is EpiSewer's default concentration likelihood: `noise_estimate`'s
+`distribution` argument defaults to `"gamma"`, of the four families it offers.
+Like [`LogNormalError`](@ref EpiSewer.LogNormalError) the noise is relative, so
+``\sigma`` is a coefficient of variation rather than an absolute scale:
+
+```math
+\mathbb{E}[y_t] = Y_t, \qquad \mathrm{sd}[y_t] = \sigma Y_t, \qquad
+y_t \sim \mathrm{Gamma}(\alpha, \beta)
+```
+
+`reparameterise` solves those moments for the native shape and rate, which
+recovers R's `gamma3_lpdf` exactly:
+
+```math
+\alpha = \frac{1}{\sigma^2}, \qquad \beta = \frac{1}{Y_t \sigma^2}
+```
+
+The two families differ in their tails at the same moments. A gamma is the
+lighter-tailed of the pair, so it is less forgiving of a measurement far above
+the expected concentration — which is what R's outlier component exists to
+absorb.
+
+# Fields
+- `cv::S`: prior for the coefficient of variation `σ`. Defaults to R's, as
+  [`LogNormalError`](@ref EpiSewer.LogNormalError) does.
+
+# Example
+```julia
+using EpiSewer, Distributions
+ge = EpiSewer.GammaError()
+mdl = as_turing_model(ge, missing, fill(100.0, 10))
+rand(mdl)
+```
+"""
+struct GammaError{S <: PriorLike} <: AbstractObservationErrorModel
+    "Prior for the coefficient of variation."
+    cv::S
+end
+
+GammaError(; cv = HalfNormal(sqrt(2 / π))) = GammaError(cv)
+
+@model function generate_observation_error_priors(
+        obs_model::GammaError, y_t, Y_t
+    )
+    cv ~ as_turing_submodel(obs_model.cv, length(Y_t); prefix = true)
+    return (; cv = cv)
+end
+
+function observation_error(::GammaError, Y_t, σ)
+    # `check_args = false` scores an invalid moment pair `-Inf` rather than
+    # throwing, which covers a non-positive expectation or coefficient of
+    # variation from a diverging proposal. Only the non-finite case needs
+    # catching, because `Inf * Inf` and `NaN` do not reach it as invalid.
+    #
+    # The sentinel is a deliberately invalid moment pair, not `Gamma(Inf, 1)`:
+    # that scores `NaN`, which propagates through the gradient instead of
+    # rejecting the proposal. `LogNormal(Inf, 1)` is a valid sentinel and this
+    # is the one place the two families do not behave alike.
+    (isfinite(Y_t) && isfinite(σ)) ||
+        return reparameterise(Gamma; mean = -1.0, sd = 1.0, check_args = false)
+    return reparameterise(Gamma; mean = Y_t, sd = σ * Y_t, check_args = false)
+end
+
+@doc raw"""
     LogNormalError{S <: PriorLike}
 
 A log-normal observation-error model with an inferred coefficient of variation.

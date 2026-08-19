@@ -245,3 +245,41 @@ end
     @test mean(cv) ≈ mean(r)
     @test std(cv) ≈ std(r)
 end
+
+# EpiSewer's default concentration likelihood is gamma — `noise_estimate`'s
+# `distribution` argument defaults to `"gamma"`, and `LogNormalError` is one of
+# the other three families it offers.
+@testitem "GammaError reproduces R's gamma3 parameterisation" begin
+    using EpiSewer
+    using Distributions: Gamma, mean, std, shape, rate, logpdf
+    using ReparameterisedDistributions: native
+
+    # R: `alpha = 1 / cv^2`, `beta = 1 / (mean * cv^2)`
+    # (`inst/stan/functions/dist_gamma.stan`, `gamma3_lpdf`).
+    for (Y, cv) in ((1500.0, 0.3), (145.0, 0.674), (3200.0, 0.085))
+        d = native(EpiSewer.observation_error(EpiSewer.GammaError(), Y, cv))
+        @test shape(d) ≈ 1 / cv^2
+        @test rate(d) ≈ 1 / (Y * cv^2)
+        # Which is the same statement as the moments it is derived from.
+        @test mean(d) ≈ Y
+        @test std(d) ≈ cv * Y
+    end
+end
+
+# Every unusable input must reject the proposal rather than poison the
+# gradient. `Gamma(Inf, 1)` scores `NaN`, so the sentinel is an invalid moment
+# pair instead — the one place this family differs from `LogNormalError`.
+@testitem "GammaError scores -Inf rather than NaN on unusable input" begin
+    using EpiSewer
+    using Distributions: logpdf
+
+    bad = (
+        (Inf, 0.3), (NaN, 0.3), (-1.0, 0.3), (0.0, 0.3),
+        (1500.0, -0.3), (1500.0, 0.0), (1500.0, Inf), (1500.0, NaN),
+    )
+    for (Y, cv) in bad
+        lp = logpdf(EpiSewer.observation_error(EpiSewer.GammaError(), Y, cv), 100.0)
+        @test lp == -Inf
+        @test !isnan(lp)
+    end
+end

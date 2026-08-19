@@ -67,7 +67,8 @@ include("models.jl")
 # Public API (not exported — call via EpiSewer.model(), etc.)
 public example_data, example_assumptions, model, observation_lead_in
 public gp_length_scale, crude_initial_infections, softplus_link
-public LogNormalError, LOD, DigitalPCRError, MeasurementOutliers, FlowNormalize
+public GammaError, LogNormalError, LOD, DigitalPCRError, MeasurementOutliers
+public FlowNormalize
 public InfectionNoise, InfectionNoiseDraws, LoadVariation
 
 end
