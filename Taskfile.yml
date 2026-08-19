@@ -40,6 +40,16 @@ tasks:
       - julia --project=. --quiet -e 'using Pkg; Pkg.test(test_args=["quality_only"])'
       - echo "✅ Quality checks completed"
 
+  test-readme:
+    desc: Run only the README wording checks (bullets, placeholders, prose)
+    # `test-quality` does NOT cover these. `runtests.jl` filters `quality_only`
+    # on the `:quality` tag and the wording items are tagged `:readme`, so a
+    # green quality run says nothing about the README's prose.
+    cmds:
+      - echo "📝 Checking README wording..."
+      - julia --project=. --quiet -e 'using Pkg; Pkg.test(test_args=["readme_only"])'
+      - echo "✅ README wording checks completed"
+
   test-parallel:
     desc: Run test-fast and test-quality concurrently (faster local iteration)
     deps: [test-fast, test-quality]
