@@ -116,8 +116,10 @@ draws = vec(returned(mdl, chn))
 summarystats(chn[[@varname(cv), @varname(init_incidence)]])
 ```
 
-`cv` is the coefficient of variation of the measurement noise and `init_incidence` is the log of the infections seeding the series, the two scalars the rest of the model is built around.
-`returned` replays the model over the posterior samples, giving the latent series behind each draw: `R_t` on the log scale as `Z_t`, infections as `I_t`, and the expected concentration as `expected_y_t`.
+`cv` is the coefficient of variation of the measurement noise.
+`init_incidence` is the log of the infections seeding the series.
+`returned` replays the model over the posterior samples.
+Each draw carries `R_t` on the log scale as `Z_t`, infections as `I_t`, and the expected concentration as `expected_y_t`.
 
 ### Plotting the results
 
