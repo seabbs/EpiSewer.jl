@@ -273,17 +273,34 @@ end
 # required when that backend is actually requested (the AD env loads them all,
 # but this keeps the registry importable without every backend present).
 _forwarddiff() = AutoForwardDiff()
-function _adtypes()
-    return Base.require(
-        Base.PkgId(
-            Base.UUID("47edcb42-4c32-4615-8424-f2b9edc5f35b"), "ADTypes"
-        )
-    )
+_adtypes() = _require("47edcb42-4c32-4615-8424-f2b9edc5f35b", "ADTypes")
+# Load the backend package, not just `ADTypes`. `AutoReverseDiff` and
+# `AutoMooncake` are only descriptions; DifferentiationInterface dispatches on
+# them through package extensions, which activate when the backend package
+# itself is loaded. Constructing the type without loading the package yields a
+# backend that fails at the first `gradient` call.
+#
+# `test/ad/setup.jl` loads all four explicitly, so the AD suite never saw this.
+# The docs' AD comparison page does not, and silently lost both ReverseDiff
+# modes and both Mooncake modes from its table — Enzyme survived only because
+# its constructor below already required its package.
+function _require(uuid, name)
+    return Base.require(Base.PkgId(Base.UUID(uuid), name))
 end
-_reversediff() = _adtypes().AutoReverseDiff(; compile = false)
-_reversediff_compiled() = _adtypes().AutoReverseDiff(; compile = true)
-_mooncake() = _adtypes().AutoMooncake(; config = nothing)
-_mooncake_forward() = _adtypes().AutoMooncakeForward(; config = nothing)
+function _reversediff_auto(compile::Bool)
+    _require("37e2e3b7-166d-5795-8a7a-e32c996b4267", "ReverseDiff")
+    return _adtypes().AutoReverseDiff(; compile = compile)
+end
+_reversediff() = _reversediff_auto(false)
+_reversediff_compiled() = _reversediff_auto(true)
+function _mooncake()
+    _require("da2b9cff-9c12-43a0-ae48-6db2b0edb7d6", "Mooncake")
+    return _adtypes().AutoMooncake(; config = nothing)
+end
+function _mooncake_forward()
+    _require("da2b9cff-9c12-43a0-ae48-6db2b0edb7d6", "Mooncake")
+    return _adtypes().AutoMooncakeForward(; config = nothing)
+end
 function _enzyme()
     Enzyme = Base.require(
         Base.PkgId(
