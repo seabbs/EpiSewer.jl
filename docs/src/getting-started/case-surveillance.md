@@ -12,8 +12,8 @@ The example series carries reported cases alongside the concentrations and the
 daily flow, over the same 120 days.
 
 ```@example cases
-using EpiSewer
-import ComposableTuringIDModels as CT
+using EpiSewer, ComposableTuringIDModels
+using Accessors: @set
 using Distributions
 
 d = EpiSewer.example_data()
@@ -40,10 +40,10 @@ transformation applied to infections.
 ```@example cases
 assumptions = EpiSewer.example_assumptions()
 
-case_stream = CT.LatentDelay(
-    CT.Ascertainment(
-        CT.LatentDelay(
-            CT.NegativeBinomialError(), Gamma(2.0, 2.0); D = 14.0
+case_stream = LatentDelay(
+    Ascertainment(
+        LatentDelay(
+            NegativeBinomialError(), Gamma(2.0, 2.0); D = 14.0
         ),
         Normal(log(0.2), 0.1)
     ),
@@ -65,14 +65,13 @@ The reporting delay carries onsets to their report date, and
 Placed on infections the streams are parallel, each observing the same `I_t`.
 The wastewater chain is the one [`EpiSewer.model`](@ref EpiSewer.model)
 assembles, taken off the default model and used unchanged.
+`Accessors.@set` puts the split in its place on a copy of that model, so the
+infection process and every assumption carry over rather than being restated.
 
 ```@example cases
 idm = EpiSewer.model(; assumptions...)
-joint = EpiSewer.model(;
-    assumptions...,
-    observation_model = CT.Split(
-        (wastewater = idm.observation_model, cases = case_stream)
-    )
+joint = @set idm.observation_model = Split(
+    (wastewater = idm.observation_model, cases = case_stream)
 )
 joint.observation_model
 ```
@@ -127,7 +126,7 @@ using Turing, DataFrames, DataFramesMeta, AlgebraOfGraphics, CairoMakie
 using Random: Xoshiro
 using Statistics: quantile
 
-mdl = CT.as_turing_model(
+mdl = as_turing_model(
     joint, (wastewater = (y = missing, flow = flow), cases = missing), n
 )
 chn = sample(Xoshiro(1), mdl, Prior(), 300; progress = false)
@@ -183,7 +182,7 @@ Across draws, the interval on the expected series spans orders of magnitude,
 which is what a prior on transmission with nothing scored against it gives.
 
 ```@example cases
-function prior_interval(f, label)
+function interval(draws, f, label)
     m = reduce(hcat, [clean(f(g)) for g in draws])
     q(p) = [quantile(view(m, i, :), p) for i in axes(m, 1)]
     return DataFrame(
@@ -193,9 +192,10 @@ function prior_interval(f, label)
 end
 
 expected = vcat(
-    prior_interval(g -> g.expected_y_t.wastewater, panels[2]),
-    prior_interval(g -> g.expected_y_t.cases, panels[3])
+    interval(draws, g -> g.expected_y_t.wastewater, panels[2]),
+    interval(draws, g -> g.expected_y_t.cases, panels[3])
 )
+
 observed = @chain vcat(
         DataFrame(t = days(y), obs = y, panel = panels[2]),
         DataFrame(t = days(cases), obs = cases, panel = panels[3])
@@ -223,6 +223,3 @@ draw(
 
 The case panel begins 24 days before the wastewater panel, which is the
 difference in lead-in between the two chains.
-
-Passing `y_t` in place of the two `missing` series conditions on both, and the
-joint model then samples as the single-stream one does.

@@ -97,6 +97,14 @@ struct MeasurementOutliers{M <: AbstractObservationModel, S, T, A} <:
     end
 end
 
+# `spiked` is derived from the other three fields, so the struct has four
+# fields and its inner constructor takes three. Accessors rebuilds a struct by
+# calling its constructor with every field, which without this method throws a
+# `MethodError` and makes the whole chain unreachable to `@set` and `modify`.
+# The derived field is recomputed rather than trusted, so it cannot go stale.
+MeasurementOutliers(model, spike, scale, _spiked) =
+    MeasurementOutliers(model, spike, scale)
+
 function MeasurementOutliers(
         model::AbstractObservationModel;
         # Truncated at zero because Stan declares `vector<lower=0> epsilon` and

@@ -10,8 +10,8 @@
 | [![cov ForwardDiff](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-forwarddiff)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-forwarddiff) | [![cov ReverseDiff](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-reversediff)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-reversediff) | [![cov ReverseDiff compiled](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-reversediff-compiled)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-reversediff-compiled) | [![cov Enzyme forward](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-enzyme-forward)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-enzyme-forward) | [![cov Enzyme reverse](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-enzyme-reverse)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-enzyme-reverse) | [![cov Mooncake reverse](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-mooncake-reverse)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-mooncake-reverse) | [![cov Mooncake forward](https://codecov.io/gh/seabbs/EpiSewer.jl/graph/badge.svg?flag=ad-mooncake-forward)](https://app.codecov.io/gh/seabbs/EpiSewer.jl?flags%5B0%5D=ad-mooncake-forward) |
 <!-- badges:end -->
 
-*A Julia port of the EpiSewer wastewater model, built from composable
-EpiAware components.*
+*A Julia port of the [EpiSewer](https://github.com/adrian-lison/EpiSewer)
+wastewater model, built from composable EpiAware components.*
 
 ## Why EpiSewer.jl?
 
@@ -49,8 +49,7 @@ To show the handling of missing data, we make the series artificially sparse by 
 The withheld days are left for the model to fill in.
 
 ```julia
-using EpiSewer, DataFrames, DataFramesMeta, Turing
-import ComposableTuringIDModels as CT
+using EpiSewer, ComposableTuringIDModels, DataFrames, DataFramesMeta, Turing
 using Dates: dayname
 
 d = EpiSewer.example_data()
@@ -100,21 +99,24 @@ The infection series starts before the first measurement, because each delay in 
 
 ```julia
 n = length(y) + EpiSewer.observation_lead_in(idm)
-mdl = CT.as_turing_model(idm, (y = y, flow = flow), n)
+mdl = as_turing_model(idm, (y = y, flow = flow), n)
 ```
 
 Fitting is Turing's `NUTS`, over reverse-mode gradients from `Mooncake`, on two chains.
 
 ```julia
 import Mooncake
+using MCMCChains: summarystats
 
 chn = sample(
     mdl, NUTS(0.9; adtype = Turing.AutoMooncake(), max_depth = 8),
     MCMCThreads(), 250, 2; num_warmup = 250, progress = false
 )
 draws = vec(returned(mdl, chn))
+summarystats(chn[[@varname(cv), @varname(init_incidence)]])
 ```
 
+`cv` is the coefficient of variation of the measurement noise and `init_incidence` is the log of the infections seeding the series, the two scalars the rest of the model is built around.
 `returned` replays the model over the posterior samples, giving the latent series behind each draw: `R_t` on the log scale as `Z_t`, infections as `I_t`, and the expected concentration as `expected_y_t`.
 
 ### Plotting the results
@@ -207,7 +209,7 @@ The growth rate follows from `R_t` and the generation time.
 ```julia
 series_plot(
     summarise(
-        draws, g -> CT.R_to_r.(exp.(g.Z_t), Ref(idm.infection_model)), inf_dates
+        draws, g -> R_to_r.(exp.(g.Z_t), Ref(idm.infection_model)), inf_dates
     );
     reference = 0.0, ylabel = "growth rate (per day)"
 )
@@ -242,7 +244,7 @@ series_plot(summarise(draws, g -> g.I_t, inf_dates); ylabel = "infections")
 
 Full documentation is hosted at [samabbott.co.uk/EpiSewer.jl](https://samabbott.co.uk/EpiSewer.jl/stable/).
 
-- **Getting started** covers the components this package adds and how to customise the model.
+- **Getting started** covers the entry point, the two places a whole stage can be swapped, and what a swap does to the model.
 - **Model components** maps each component of the R model onto the ecosystem piece that provides it, and marks the boundary of the default chain.
 - **Public API** documents the exported and public interface.
 - **LLM-assisted development process** records how this port was produced and reviewed.

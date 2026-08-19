@@ -1,4 +1,10 @@
 # MANAGED by EpiAwarePackageTools.scaffold — do not edit by hand.
+#
+# EPIAWARE_MANAGED_OVERRIDE: kept package-owned for the `with:` block below.
+# The kit renders that block from its `docs_timeout` input alone, so a resync
+# would drop `julia_num_threads` and silently halve the docs fit's chains.
+# Drop this marker once the kit exposes a threads input:
+# EpiAware/EpiAwarePackageTools.jl#474.
 name: Documenter
 
 on:
@@ -37,4 +43,11 @@ jobs:
     uses: EpiAware/.github/.github/workflows/documentation.yml@8c1e09003b9cf0d2eb3cbec7aa726855bb365ac5
     with:
       timeout_minutes: 90
+      # `ubuntu-latest` gives four vCPUs and the reusable workflow defaults
+      # this to 1, so `MCMCThreads()` in the README fit was running its chains
+      # one after another. Four threads runs four chains in the wall-clock time
+      # of one, which buys a better R-hat estimate for nothing. The kit emits
+      # only `timeout_minutes` into this block, so a resync would drop this —
+      # hence the override marker above.
+      julia_num_threads: 4
     secrets: inherit  # pragma: allowlist secret

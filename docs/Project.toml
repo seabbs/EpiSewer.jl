@@ -1,5 +1,6 @@
 [deps]
 ADFixtures = "87deffd3-0d35-4a6b-a94a-2bf7fee064e7"
+Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
 AlgebraOfGraphics = "cbdf2221-f076-402e-a563-3d30da359d67"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"

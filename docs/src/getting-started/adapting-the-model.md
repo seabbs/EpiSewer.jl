@@ -15,8 +15,8 @@ The last 60 days of the Zurich example series stand in for a series the
 defaults were not tuned to.
 
 ```@example adapt
-using EpiSewer, DataFrames, DataFramesMeta, Turing
-import ComposableTuringIDModels as CT
+using EpiSewer, ComposableTuringIDModels, DataFrames, DataFramesMeta, Turing
+using Accessors: @set
 using Distributions: Normal, Gamma, truncated
 using Statistics: median, quantile, std
 using Random: Xoshiro
@@ -92,7 +92,7 @@ intervals.
 using AlgebraOfGraphics, CairoMakie
 
 function prior_draws(m, y_t, n_t; n_draws = 200, seed = 1)
-    mdl = CT.as_turing_model(m, y_t, n_t)
+    mdl = as_turing_model(m, y_t, n_t)
     chn = sample(Xoshiro(seed), mdl, Prior(), n_draws; progress = false)
     return vec(returned(mdl, chn))
 end
@@ -160,7 +160,7 @@ typical(draws) = round(
 (default = typical(default_draws), matched = typical(tuned_draws))
 ```
 
-The carried-over length scale moves `R_t` a third further each day than the
+The carried-over length scale moves `R_t` about 40% further each day than the
 converted one.
 
 ## The reproduction number process
@@ -171,20 +171,23 @@ given, and the default `rt` pre-applies `EpiSewer.softplus_link` so that the
 exponential is undone and `R_t` grows linearly in the latent path.
 A bare latent model keeps the exponential.
 
-```@example adapt
-walk = CT.RandomWalk(;
-    init = Normal(0.0, 0.2),
-    ϵ_t = CT.HierarchicalNormal(; std = truncated(Normal(0, 0.05), 0, Inf))
-)
-autoreg = CT.AR(;
-    damp = truncated(Normal(0.9, 0.05), 0, 1), init = Normal(0.0, 0.2),
-    ϵ_t = CT.HierarchicalNormal(; std = truncated(Normal(0, 0.05), 0, Inf))
-)
-link(process) = CT.TransformLatentModel(process, EpiSewer.softplus_link)
+`tuned` is already assembled, so `Accessors.@set` puts a different process on a
+copy of it rather than rebuilding the model from the assumptions.
 
-walk_model = EpiSewer.model(; assumptions..., retune..., rt = link(walk))
-ar_model = EpiSewer.model(; assumptions..., retune..., rt = link(autoreg))
-exp_model = EpiSewer.model(; assumptions..., retune..., rt = walk)
+```@example adapt
+walk = RandomWalk(;
+    init = Normal(0.0, 0.2),
+    ϵ_t = HierarchicalNormal(; std = truncated(Normal(0, 0.05), 0, Inf))
+)
+autoreg = AR(;
+    damp = truncated(Normal(0.9, 0.05), 0, 1), init = Normal(0.0, 0.2),
+    ϵ_t = HierarchicalNormal(; std = truncated(Normal(0, 0.05), 0, Inf))
+)
+link(process) = TransformLatentModel(process, EpiSewer.softplus_link)
+
+walk_model = @set tuned.infection_model.rt = link(walk)
+ar_model = @set tuned.infection_model.rt = link(autoreg)
+exp_model = @set tuned.infection_model.rt = walk
 
 walk_draws = prior_draws(walk_model, y_t, n)
 ar_draws = prior_draws(ar_model, y_t, n)
@@ -219,8 +222,8 @@ last_rt(draws, p) = round.(
 )
 ```
 
-The exponential link puts `R_t` above 7 once in a hundred draws on the last day
-of the series, against 3 under the softplus.
+The exponential link puts `R_t` near 4 once in a hundred draws on the last day
+of the series, against under 2.5 under the softplus.
 
 ## Removing components
 
@@ -299,7 +302,7 @@ load_variation = EpiSewer.LoadVariation(
     EpiSewer.LogNormalError(; cv = Normal(0.001, 0.0)); cv = 1.0
 )
 map([10.0, 1.0e3, 1.0e5]) do shedding
-    g = CT.as_turing_model(
+    g = as_turing_model(
         load_variation, missing, fill(shedding, 400)
     )(Xoshiro(2))
     (
@@ -326,12 +329,12 @@ costs the most.
 
 ```@example adapt
 pmf_of(dist, D) = reverse(
-    CT.LatentDelay(EpiSewer.LogNormalError(), dist; D = D).delay
+    LatentDelay(EpiSewer.LogNormalError(), dist; D = D).delay
 )
 shed_38 = pmf_of(assumptions.shedding_dist, 38.0)
 shed_21 = pmf_of(assumptions.shedding_dist, 21.0)
 
-uncertain_shedding = CT.UncertainDelay(
+uncertain_shedding = UncertainDelay(
     Gamma,
     [
         truncated(Normal(0.93, 0.15), 0, Inf),
@@ -364,7 +367,7 @@ pmf_frame(p, form; draw_id = 1) = DataFrame(
     day = 0:(length(p) - 1), mass = p, draw = draw_id, form = form
 )
 
-mdl = CT.as_turing_model(uncertain_shedding)
+mdl = as_turing_model(uncertain_shedding)
 chn = sample(Xoshiro(3), mdl, Prior(), 40; progress = false)
 drawn = reduce(
     vcat,
@@ -390,6 +393,54 @@ draw(
 )
 ```
 
+What the profile costs is easier to see on the chain than on the PMF.
+The same pulse of infections goes into each form, with the load variation and
+the spikes dropped so the delays are all that is left, and what comes out is
+the expected concentration.
+
+```@example adapt
+function response(shedding, form; seed = 5)
+    m = EpiSewer.model(;
+        assumptions..., retune..., shedding_dist = shedding,
+        load_cv = nothing, outlier_scale = nothing
+    )
+    n_in = n_days + EpiSewer.observation_lead_in(m)
+    t = (1:n_in) .- n_in
+    pulse = 1.0 .+ 2.0e3 .* exp.(-((t .+ 40) .^ 2) ./ 8)
+    g = as_turing_model(
+        m.observation_model, (y = missing, flow = flow), pulse
+    )(Xoshiro(seed))
+    return DataFrame(
+        t = last(t, n_days), expected = g.expected, form = form, draw = seed
+    )
+end
+
+responses = vcat(
+    response(assumptions.shedding_dist, "continuous, D = 38"),
+    response(shed_21, "discretised, D = 21"),
+    [response(uncertain_shedding, "inferred"; seed = s) for s in 1:4]...
+)
+
+draw(
+    data(responses) * mapping(
+        :t, :expected, color = :form, group = :draw => nonnumeric
+    ) * visual(Lines; linewidth = 1.6);
+    axis = (;
+        yscale = log10, xlabel = "day, counting back from the last",
+        ylabel = "expected concentration (gc/mL)"
+    ),
+    figure = (; size = (760, 340))
+)
+```
+
+The peak lands on the same day whichever profile is used, because the profile's
+mode is at the start and truncating it takes only the tail.
+What the horizon changes is how long the pulse takes to clear.
+Thirty days after it the profile truncated at 21 days has all but cleared,
+while the one truncated at 38 is still more than twenty times higher.
+The inferred profile draws a shape each iteration, so its response moves in
+height and in how heavy a tail it leaves.
+
 ## Measurement models
 
 The measurement stage is the innermost part of the observation chain, so
@@ -403,10 +454,10 @@ function measurement_chain(error_model)
             error_model; scale = retune.outlier_scale
         )
     )
-    obs = CT.LatentDelay(obs, assumptions.shedding_dist; D = 38.0)
-    obs = CT.Ascertainment(obs, CT.FixedIntercept(log(lpc)))
+    obs = LatentDelay(obs, assumptions.shedding_dist; D = 38.0)
+    obs = Ascertainment(obs, FixedIntercept(log(lpc)))
     obs = EpiSewer.LoadVariation(obs; cv = 1.0)
-    return CT.LatentDelay(obs, assumptions.incubation_dist; D = 8.0)
+    return LatentDelay(obs, assumptions.incubation_dist; D = 8.0)
 end
 
 lod = 200.0
@@ -430,25 +481,29 @@ the default does.
 Passing `y = missing` leaves the measurements to be drawn rather than scored,
 so each draw pairs an expected concentration with the measurement the model
 would record.
+Drawing from the default as well puts the two side by side.
 
 ```@example adapt
-lod_draws = prior_draws(
-    lod_model, (y = missing, flow = flow), n; n_draws = 60
+function generated(m, label; n_draws = 60)
+    draws = prior_draws(m, (y = missing, flow = flow), n; n_draws = n_draws)
+    return DataFrame(
+        expected = reduce(vcat, [g.expected_y_t for g in draws]),
+        drawn = reduce(vcat, [Float64.(g.generated_y_t) for g in draws]),
+        model = label,
+    )
+end
+
+measurements = vcat(
+    generated(tuned, "default"), generated(lod_model, "LOD = $lod")
 )
-measurements = DataFrame(
-    expected = reduce(vcat, [g.expected_y_t for g in lod_draws]),
-    drawn = reduce(vcat, [Float64.(g.generated_y_t) for g in lod_draws]),
-)
-(
-    days = nrow(measurements),
-    at_limit = count(==(lod), measurements.drawn),
-)
+@by(measurements, :model, :days = length(:drawn),
+    :below_limit = count(<(lod), :drawn), :at_limit = count(==(lod), :drawn))
 ```
 
 ```@example adapt
 draw(
     data(@rsubset(measurements, 1.0 < :expected < 1.0e5)) *
-        mapping(:expected, :drawn) *
+        mapping(:expected, :drawn, color = :model) *
         visual(Scatter; markersize = 4, alpha = 0.25) +
         data((; limit = [lod])) * mapping(:limit) *
         visual(HLines; color = :grey40, linestyle = :dash),
@@ -457,12 +512,14 @@ draw(
         xlabel = "expected concentration (gc/mL)",
         ylabel = "drawn measurement (gc/mL)"
     ),
-    figure = (; size = (640, 380))
+    figure = (; size = (700, 380))
 )
 ```
 
-Above the limit the measurement tracks the expected concentration with relative
-noise, and below it every draw is reported at the limit.
+The two agree above the limit, where each measurement tracks the expected
+concentration with relative noise.
+Below it the default keeps reporting whatever it drew, and the censored model
+reports the limit instead, which is the flat line of points along the dashes.
 
 `DigitalPCRError` scores the positive partition counts instead of a
 concentration, which is what a digital PCR assay reports.
@@ -476,7 +533,7 @@ partitions = 25_000
 count_model = EpiSewer.model(;
     assumptions..., retune...,
     observation_model = measurement_chain(
-        CT.TransformObservationModel(
+        TransformObservationModel(
             EpiSewer.DigitalPCRError(fill(partitions, n_days)),
             Y -> log.(Y .* partition_volume)
         )
@@ -501,7 +558,7 @@ the concentration grows.
 ```@example adapt
 concentration = exp10.(range(0, 4.5, 60))
 assay = EpiSewer.DigitalPCRError(fill(partitions, length(concentration)))
-assay_draw = CT.as_turing_model(
+assay_draw = as_turing_model(
     assay, missing, log.(concentration .* partition_volume)
 )(Xoshiro(4))
 assayed = DataFrame(
@@ -510,12 +567,15 @@ assayed = DataFrame(
     drawn = assay_draw.y_t ./ partitions,
 )
 
+measured = collect(extrema(skipmissing(y)))
+
 draw(
     data(assayed) * (
         mapping(:concentration, :probability) *
             visual(Lines; color = :grey50) +
             mapping(:concentration, :drawn) * visual(Scatter; markersize = 6)
-    );
+    ) + data((; c = measured)) * mapping(:c) *
+        visual(VLines; color = :grey40, linestyle = :dash);
     axis = (;
         xscale = log10, xlabel = "concentration (gc/mL)",
         ylabel = "positive partitions (share)"
@@ -526,11 +586,14 @@ draw(
 
 Above about 10⁴ gc/mL almost every partition is positive, so the counts stop
 separating one concentration from another and the assay has to be diluted.
+The dashes mark the concentrations measured on this series, which run from a
+few per cent of partitions positive to about three quarters.
+An assay reading counts would separate this series over its whole range.
 
 ## Learning more
 
-- The [Getting started](@ref getting-started) page covers the components this
-  package adds and the two swap points on `model()`.
+- The [Getting started](@ref getting-started) page covers the entry point and
+  the two swap points on `model()`.
 - The [Model components](@ref model-components) page maps every EpiSewer
   component onto the ecosystem piece that provides it.
 - The [Public API](@ref public-api) lists the full interface.
