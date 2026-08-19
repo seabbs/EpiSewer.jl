@@ -19,14 +19,26 @@ using TestItemRunner
     @test params(m.spike.untruncated) == (0.0, 2.0e-8, 4.0)
 
     # No negative spikes: an outlier component must not reduce the expected
-    # concentration. Untruncated, 36.8% of the mass would be below zero.
+    # concentration. At x = mu the GEV's cdf reduces to exp(-1) for *any*
+    # sigma and xi, since 1 + xi*(x - mu)/sigma is exactly 1 there — so 36.8%
+    # of the mass below zero is a fixed property of truncating at the
+    # location, not a number tied to this sigma/xi.
     @test minimum(m.spike) == 0.0
-    @test cdf(m.spike.untruncated, 0.0) ≈ 0.3679 atol = 1.0e-4
+    @test cdf(m.spike.untruncated, 0.0) ≈ exp(-1)
 
     # The extreme right tail (xi = 4) is what makes sigma = 2e-8 meaningful: a
     # typical day is untouched, a rare day absorbs a few case-equivalents.
-    @test quantile(m.spike, 0.5) ≈ 2.351e-7 rtol = 1.0e-3
-    @test quantile(m.spike, 0.99) ≈ 3.092 rtol = 1.0e-3
+    # Checked against the closed-form GEV quantile
+    # mu + sigma/xi * ((-log p)^(-xi) - 1), applied to the probability the
+    # *truncated* distribution's own quantile implies at p
+    # (F(0) + p * (1 - F(0))), since a third of the mass sits below zero.
+    gev_quantile(p, μ, σ, ξ) = μ + σ / ξ * ((-log(p))^(-ξ) - 1)
+    F0 = cdf(m.spike.untruncated, 0.0)
+    reweight(p) = F0 + p * (1 - F0)
+    μ, σ, ξ = params(m.spike.untruncated)
+    p50, p99 = reweight(0.5), reweight(0.99)
+    @test quantile(m.spike, 0.5) ≈ gev_quantile(p50, μ, σ, ξ) rtol = 1.0e-9
+    @test quantile(m.spike, 0.99) ≈ gev_quantile(p99, μ, σ, ξ) rtol = 1.0e-9
 end
 
 @testitem "MeasurementOutliers composes an Ascertainment over IID" begin

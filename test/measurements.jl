@@ -192,7 +192,7 @@ end
 
 @testitem "DigitalPCRError binomial link is the Poisson partition law" begin
     using EpiSewer
-    using Distributions: Binomial, clamp
+    using Distributions: Binomial, Poisson, clamp, pdf
     import ComposableTuringIDModels: as_turing_model, TransformObservationModel, BinomialError
 
     # The transform composition must yield Binomial(N, 1 - exp(-exp(Y))).
@@ -200,9 +200,15 @@ end
     tr = EpiSewer._transformed_dpcr(m)
     @test tr isa TransformObservationModel
     @test tr.model isa BinomialError
-    Y = log(0.02)  # log copies per partition
-    p = 1.0 - exp(-exp(Y))
-    @test p ≈ 0.0198013 atol = 1.0e-5
+
+    # Exercise the stored transform itself, checked against the Poisson
+    # zero-probability the docstring claims it is (a partition tests positive
+    # unless it receives no copies), computed via `Distributions.Poisson`
+    # rather than a copy of the link's own formula. This would catch a wrong
+    # exponent, a missing minus sign, or a swapped inner/outer `exp`.
+    λ = 0.02  # copies per partition
+    Y = log(λ)
+    @test only(tr.transform([Y])) ≈ 1 - pdf(Poisson(λ), 0)
 end
 
 @testitem "LogNormalError survives an overflowing coefficient of variation" begin

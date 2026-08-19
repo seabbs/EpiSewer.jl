@@ -146,19 +146,25 @@ end
 
 @testitem "crude_initial_infections matches EpiSewer's initial_cases_crude" begin
     using EpiSewer
+    using Statistics: mean
 
+    # R's `initial_cases_crude` (`R/sewer_modeldata.R`):
     # 0.1 + mean(concentration over the window) * mean(flow) / load per case.
+    # Derived here from the same conc/flow arrays the call uses, rather than
+    # a value worked out by hand and copied in, so editing the inputs above
+    # can't silently drift out of sync with the numbers checked below.
     conc = [100.0, 200.0, 300.0]
     flow = [1.0e11, 1.0e11, 1.0e11]
-    got = EpiSewer.crude_initial_infections(conc, flow, 2.0e11; days = 3)
-    @test got ≈ 0.1 + 200.0 * 1.0e11 / 2.0e11
+    lpc = 2.0e11
+    got = EpiSewer.crude_initial_infections(conc, flow, lpc; days = 3)
+    @test got ≈ 0.1 + mean(conc) * mean(flow) / lpc
     # `missing` measurements are skipped rather than propagated.
     withmissing = [100.0, missing, 300.0]
     @test EpiSewer.crude_initial_infections(
-        withmissing, flow, 2.0e11; days = 3
-    ) ≈ 0.1 + 200.0 * 1.0e11 / 2.0e11
+        withmissing, flow, lpc; days = 3
+    ) ≈ 0.1 + mean(skipmissing(withmissing)) * mean(flow) / lpc
     @test_throws ArgumentError EpiSewer.crude_initial_infections(
-        [missing, missing], flow, 2.0e11; days = 2
+        [missing, missing], flow, lpc; days = 2
     )
 end
 
@@ -278,8 +284,11 @@ end
     for z in (-0.8, -0.2, 0.0, 0.3, 1.0)
         @test exp(only(EpiSewer.softplus_link([z]))) ≈ sp(1.0 + z, 4.0)
     end
-    # At the centre of the latent path it gives R_t just above 1, as R does.
-    @test exp(only(EpiSewer.softplus_link([0.0]))) ≈ 1.00453 atol = 1.0e-5
+    # At the centre of the latent path it gives R_t just above 1, as R does:
+    # z = 0 leaves only the fixed intercept, so this is exactly
+    # log(1 + exp(4)) / 4 — `sp(1.0, 4.0)` above, spelled out because it is
+    # the one point on the curve worth naming.
+    @test exp(only(EpiSewer.softplus_link([0.0]))) ≈ log1p(exp(4.0)) / 4.0
     # Asymptotically linear rather than exponential, so the upper tail is far
     # tamer than `exp`. That is what keeps E[R_t] from carrying a compounding
     # upward bias through the renewal recursion.

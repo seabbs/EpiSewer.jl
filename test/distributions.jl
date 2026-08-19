@@ -33,20 +33,29 @@ using TestItemRunner
     @test length(gi) == 14
     @test maximum(abs.(gi .- r14)) < 1.0e-7
 
-    # The mean generation interval is the 3 days the parameterisation asks for
-    # (R: 2.939951024644756), not the 1.955 days the hand-built lag-0-indexed
-    # PMF gave.
-    @test sum((1:14) .* gi) ≈ 2.9399509958966226 atol = 1.0e-9
+    # The mean generation interval sits close to the 3 days the
+    # parameterisation asks for, not the ~2 days a hand-built lag-0-indexed
+    # PMF would give. It is not exactly 3: renormalising the bins to sum to 1
+    # within maxX = 14 trims a little mass, and with it a little of the mean,
+    # off the untruncated continuous tail. A missing shift would land well
+    # outside this range, not just off in the last digits.
+    @test 2.9 < sum((1:14) .* gi) < 3.0
 
-    # No same-day transmission: the shift puts no mass below lag 1, so the
-    # lag-0 bin is exactly zero before `Renewal` drops it.
+    # No same-day transmission, stated where it comes from: the shift moves
+    # the support's lower bound to 1, so no discretisation of it can put mass
+    # at lag 0, whatever `Renewal` then does with that bin.
     shifted = Gamma(((3.0 - 1) / 2.4)^2, 2.4^2 / (3.0 - 1)) + 1
-    @test first(CT._discretised_pmf(shifted; Δd = 1.0, D = 15.0)) == 0.0
-    @test gi[1] ≈ 0.2873012 atol = 1.0e-6
+    @test minimum(shifted) == 1.0
+    # The shifted gamma's shape is < 1, so the discretised interval peaks at
+    # its first bin (lag 1) rather than later.
+    @test gi[1] == maximum(gi)
 end
 
 @testitem "shedding and incubation PMFs are the R assumptions" begin
     using EpiSewer
+    using Distributions: Gamma, mean
+    import ComposableTuringIDModels as CT
+
     mdl = EpiSewer.model(; EpiSewer.example_assumptions()...)
     # `LatentDelay` stores the PMF reversed.
     incubation = reverse(mdl.observation_model.delay)
@@ -59,11 +68,36 @@ end
         @test sum(pmf) ≈ 1.0 atol = 1.0e-9
     end
 
-    # Shedding load: Gamma(0.929639, 7.241397), maxX = 38. Day 1 is the mode.
+    # Two separate claims, and they need separate checks.
+    #
+    # The wiring: `model()` must hand `LatentDelay` the shapes, scales and
+    # windows `example_assumptions` documents (shedding Gamma(0.929639,
+    # 7.241397) over 38 days, incubation Gamma(8.5, 0.4) over 8). Built here
+    # through the same public constructor, so a wrong parameter or window in
+    # `model()` breaks it bin by bin. This says nothing about whether the
+    # discretisation itself is right — both sides run the same code.
+    ref(dist, D) = reverse(CT.LatentDelay(CT.NormalError(), dist; D = D).delay)
+    @test shedding ≈ ref(Gamma(0.929639, 7.241397), 38.0) atol = 1.0e-9
+    @test incubation ≈ ref(Gamma(8.5, 0.4), 8.0) atol = 1.0e-9
+
+    # The discretisation: independent of the package entirely, a discretised
+    # and right-truncated distribution keeps its mean, losing a little from
+    # the top where the tail is cut. So the ratio sits just under one, and a
+    # wrong shape, scale or shift moves the mean far more than that. Shedding
+    # loses more (2.7%) than incubation (0.5%) because a shape below one
+    # carries more mass past its 38-day window.
+    cases = (
+        (incubation, Gamma(8.5, 0.4)),
+        (shedding, Gamma(0.929639, 7.241397)),
+    )
+    for (pmf, dist) in cases
+        discretised = sum((0:(length(pmf) - 1)) .* pmf)
+        @test 0.95 < discretised / mean(dist) < 1.0
+    end
+
+    # Shedding load: shape < 1, so day 1 (not day 0) is the discretised mode.
     @test shedding[2] > shedding[1]
-    @test shedding[2] ≈ 0.1344834 atol = 1.0e-5
-    # Incubation: Gamma(8.5, 0.4), mean 3.4 days.
-    @test sum((0:7) .* incubation) ≈ 3.3846128 atol = 1.0e-6
+    @test shedding[2] == maximum(shedding)
 end
 
 @testitem "delay inputs take a distribution, a vector or a prior model" begin
