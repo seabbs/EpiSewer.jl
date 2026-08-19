@@ -238,6 +238,4 @@ end
     r = truncated(Normal(0.0, 1.0), 0.0, Inf)
     @test mean(cv) ≈ mean(r)
     @test std(cv) ≈ std(r)
-    # Not R's init of 0.1, which is what this replaced.
-    @test !isapprox(mean(cv), 0.1; atol = 0.01)
 end

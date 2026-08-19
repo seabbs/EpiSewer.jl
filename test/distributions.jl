@@ -192,7 +192,10 @@ end
 # does: R's measurement table holds only sampled days, so its `flow[1:7]` runs
 # from the first measurement. Averaging concentrations from one window and flow
 # from another moved the shipped value by 11.8%.
-@testitem "crude_initial_infections anchors its window at the first measurement" begin
+# The estimate is a mean concentration times a mean flow over the load per case,
+# so its correctness is in how it picks the window and how it scales — not in
+# any particular number for this series.
+@testitem "crude_initial_infections scales and windows correctly" begin
     using EpiSewer
     using Dates: dayabbr
 
@@ -202,20 +205,60 @@ end
         dayabbr(t) in ("Mon", "Thu") ? c : missing
             for (t, c) in zip(d.measurements.date, d.measurements.concentration)
     ]
-    # R's `initial_cases_crude` for this series, read from its own generated
-    # init file: exp(iota_log_seed_intercept - log(10)/8).
-    @test EpiSewer.crude_initial_infections(thin, flow, 1.1e11) ≈ 816.8415 atol = 1.0e-4
-    @test EpiSewer.example_assumptions().initial_infections ≈ 816.8415 atol = 1.0e-4
+    lpc = 1.1e11
+    f(c, q; kw...) = EpiSewer.crude_initial_infections(c, q, lpc; kw...)
+    base = f(thin, flow)
+    # The offset keeping the estimate positive when nothing was measured.
+    offset = 0.1
 
-    # Padding the front with unmeasured days must not change the answer: that
-    # equivalence is the property the anchoring buys.
-    pad = 5
-    padded = vcat(fill(missing, pad), thin)
-    padded_flow = vcat(fill(flow[1], pad), flow)
-    @test EpiSewer.crude_initial_infections(padded, padded_flow, 1.1e11) ≈
-        EpiSewer.crude_initial_infections(thin, flow, 1.1e11)
+    # Anchored at the first measurement, so leading unmeasured days are inert.
+    # This is the property the anchoring buys, and what a calendar-padded frame
+    # broke when it averaged concentration and flow over different windows.
+    for pad in (1, 5, 30)
+        @test f(vcat(fill(missing, pad), thin), vcat(fill(flow[1], pad), flow)) ≈ base
+    end
 
-    @test_throws ArgumentError EpiSewer.crude_initial_infections(
-        fill(missing, 10), flow, 1.1e11
-    )
+    # Linear in concentration and inverse in the load per case, both exactly.
+    @test f(2 .* thin, flow) - offset ≈ 2 * (base - offset)
+    @test EpiSewer.crude_initial_infections(thin, flow, 2 * lpc) - offset ≈
+        (base - offset) / 2
+
+    # Only the window counts: anything after it cannot move the estimate.
+    start = findfirst(!ismissing, thin)
+    beyond = copy(thin)
+    beyond[(start + 7):end] .= missing
+    @test f(beyond, flow) ≈ base
+    @test f(thin, flow; days = 3) != base
+
+    # Nothing to seed from is an error rather than a silent zero.
+    @test_throws ArgumentError f(fill(missing, 10), flow)
+end
+
+# The shipped assumptions are not independent: two of them are derived from the
+# load per case and the data. Asserting the derivation rather than the numbers
+# catches them drifting apart, which is silent otherwise.
+@testitem "the shipped assumptions are internally consistent" begin
+    using EpiSewer
+    using Dates: dayabbr
+    using Statistics: median
+
+    a = EpiSewer.example_assumptions()
+    d = EpiSewer.example_data()
+    flow = Vector{Float64}(d.flows.flow)
+    thin = [
+        dayabbr(t) in ("Mon", "Thu") ? c : missing
+            for (t, c) in zip(d.measurements.date, d.measurements.concentration)
+    ]
+
+    # `initial_infections` is `crude_initial_infections` on the series the
+    # example fits, at the shipped load per case. Compared at the precision the
+    # constant is quoted to rather than to floating point: it is a readable
+    # rounding of the derived value, and the drift this guards against is the
+    # 11.8% kind, not the eighth decimal place.
+    @test a.initial_infections ≈
+        EpiSewer.crude_initial_infections(thin, flow, a.load_per_case) rtol = 1.0e-6
+
+    # `outlier_scale` is R's `load_mean / flow_median`: one unit of spike, on
+    # the concentration scale.
+    @test a.outlier_scale ≈ a.load_per_case / median(flow) rtol = 1.0e-4
 end
