@@ -16,6 +16,15 @@ function _draw(family, mean, sd, z)
     return quantile(d, cdf(Normal(), z))
 end
 
+# The field type a noise family is stored under. `typeof(LogNormal)` is
+# `UnionAll`, which says nothing about *which* family it is, so `_draw`'s
+# dispatch is resolved at run time on every scan step and the incidence it
+# returns infers as `Any` — which then propagates through the whole renewal
+# recursion. `Type{LogNormal}` has one instance, so the family stays in the
+# type domain and the scan stays concretely typed.
+_family_type(::Type{F}) where {F} = Type{F}
+_family_type(dist) = typeof(dist)
+
 @doc raw"""
     InfectionNoise{D, X, C} <: AbstractRenewalModifier
 
@@ -107,6 +116,17 @@ struct InfectionNoise{D, X, C} <: AbstractRenewalModifier
     cv_cap::C
     "Sharpness of the soft limit."
     cv_sharpness::C
+
+    # Inner constructor so that no default one is generated: the family has to
+    # reach the field as `Type{F}` rather than as `UnionAll` (see
+    # `_family_type`).
+    function InfectionNoise(
+            dist, overdispersion, cv_cap::C, cv_sharpness::C
+        ) where {C}
+        return new{_family_type(dist), typeof(overdispersion), C}(
+            dist, overdispersion, cv_cap, cv_sharpness
+        )
+    end
 end
 
 function InfectionNoise(;
@@ -143,6 +163,16 @@ struct InfectionNoiseDraws{V, D, X, C} <: AbstractRenewalModifier
     cv_cap::C
     "Sharpness of the soft limit."
     cv_sharpness::C
+
+    # As on [`InfectionNoise`](@ref): the family reaches the field as
+    # `Type{F}`, so `apply_modifier`'s `_draw` call resolves at compile time.
+    function InfectionNoiseDraws(
+            raw, dist, overdispersion, cv_cap::C, cv_sharpness::C
+        ) where {C}
+        return new{typeof(raw), _family_type(dist), typeof(overdispersion), C}(
+            raw, dist, overdispersion, cv_cap, cv_sharpness
+        )
+    end
 end
 
 # The substate is the step counter: a scan step has no clock of its own, so a

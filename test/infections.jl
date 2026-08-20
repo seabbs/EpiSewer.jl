@@ -340,3 +340,38 @@ end
             1.0e-12
     end
 end
+
+# The renewal scan runs this once per timestep inside the differentiated
+# log-density, so an abstract return type here is paid on every gradient.
+# Storing the noise family as `LogNormal` rather than an instance is the easy
+# way to reintroduce it: `typeof(LogNormal)` is a `UnionAll`, which says
+# nothing about which family it is, so `_draw` cannot be resolved until run
+# time and the incidence comes back as `Any` through the whole recursion.
+@testitem "the renewal scan step infers concretely" begin
+    using EpiSewer
+    using Distributions: Normal, LogNormal
+
+    for family in (LogNormal, Normal)
+        noise = EpiSewer.InfectionNoise(; dist = family)
+        # The family must reach the field as something dispatch can resolve
+        # on, not as a `UnionAll`. `isconcretetype` is the wrong predicate
+        # here: it is false for every `Type{...}`, which is exactly what we
+        # want the field to be. `isdispatchelem` asks the question that
+        # matters — can a method be selected on this at compile time.
+        ft = fieldtype(typeof(noise), :dist)
+        @test Base.isdispatchelem(ft)
+        @test !(ft isa UnionAll)
+
+        draws = EpiSewer.InfectionNoiseDraws(
+            randn(8), noise.dist, noise.overdispersion,
+            noise.cv_cap, noise.cv_sharpness,
+        )
+        rt = only(
+            Base.return_types(
+                EpiSewer.apply_modifier, (typeof(draws), Float64, Int)
+            )
+        )
+        @test isconcretetype(rt)
+        @test rt === Tuple{Float64, Int}
+    end
+end
