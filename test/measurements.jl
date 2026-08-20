@@ -278,8 +278,14 @@ end
         (1500.0, -0.3), (1500.0, 0.0), (1500.0, Inf), (1500.0, NaN),
     )
     for (Y, cv) in bad
-        lp = logpdf(EpiSewer.observation_error(EpiSewer.GammaError(), Y, cv), 100.0)
+        d = EpiSewer.observation_error(EpiSewer.GammaError(), Y, cv)
+        lp = logpdf(d, 100.0)
         @test lp == -Inf
         @test !isnan(lp)
+        # Imputing a `missing` observation samples from whatever the guard
+        # returns, so the sentinel must also be drawable. A sentinel that only
+        # scores correctly throws the first time a fit reaches a bad point
+        # with data missing, which is exactly where it is hardest to see.
+        @test rand(d) isa Real
     end
 end

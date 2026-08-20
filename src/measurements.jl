@@ -178,17 +178,18 @@ GammaError(; cv = HalfNormal(sqrt(2 / π))) = GammaError(cv)
 end
 
 function observation_error(::GammaError, Y_t, σ)
-    # `check_args = false` scores an invalid moment pair `-Inf` rather than
-    # throwing, which covers a non-positive expectation or coefficient of
-    # variation from a diverging proposal. Only the non-finite case needs
-    # catching, because `Inf * Inf` and `NaN` do not reach it as invalid.
-    #
-    # The sentinel is a deliberately invalid moment pair, not `Gamma(Inf, 1)`:
-    # that scores `NaN`, which propagates through the gradient instead of
-    # rejecting the proposal. `LogNormal(Inf, 1)` is a valid sentinel and this
-    # is the one place the two families do not behave alike.
-    (isfinite(Y_t) && isfinite(σ)) ||
-        return reparameterise(Gamma; mean = -1.0, sd = 1.0, check_args = false)
+    # The sentinel has to satisfy two things at once, and only one candidate
+    # does. `logpdf` must be `-Inf` so a diverging proposal is rejected, and
+    # `rand` must not throw, because imputing a `missing` observation samples
+    # from whatever this returns. `Gamma(Inf, 1)` scores `NaN`, which poisons
+    # the gradient. An invalid moment pair under `check_args = false` scores
+    # `-Inf` correctly but throws a `DomainError` from `rand`, which only
+    # surfaces when a fit reaches an unusable point with data missing.
+    # `Gamma(1, Inf)` does both: `-Inf` and a finite-free `Inf` draw. It is the
+    # counterpart of `LogNormal(Inf, 1)` in `LogNormalError`.
+    _reject = Gamma(1.0, Inf)
+    (isfinite(Y_t) && isfinite(σ)) || return _reject
+    (Y_t > 0 && σ > 0) || return _reject
     return reparameterise(Gamma; mean = Y_t, sd = σ * Y_t, check_args = false)
 end
 
