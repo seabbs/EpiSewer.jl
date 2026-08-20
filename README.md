@@ -101,15 +101,18 @@ n = length(y) + EpiSewer.observation_lead_in(idm)
 mdl = as_turing_model(idm, (y = y, flow = flow), n)
 ```
 
-Fitting uses Turing's `NUTS` with reverse-mode gradients from `Mooncake`, over two chains.
+Fitting uses Turing's `NUTS` with reverse-mode gradients from `Mooncake`.
+The settings are EpiSewer's own: four chains, 500 warmup and 500 sampling iterations, and a tree depth limit of 15.
+That limit matters more than it looks.
+This model wants trajectories of about ten doublings, so Turing's default of 10 truncates every one of them and the chains barely move.
 
 ```julia
 import Mooncake
 using MCMCChains: summarystats
 
 chn = sample(
-    mdl, NUTS(0.9; adtype = Turing.AutoMooncake(), max_depth = 8),
-    MCMCThreads(), 250, 2; num_warmup = 250, progress = false
+    mdl, NUTS(0.9; adtype = Turing.AutoMooncake(), max_depth = 15),
+    MCMCThreads(), 500, 4; num_warmup = 500, progress = false
 )
 draws = vec(returned(mdl, chn))
 summarystats(chn[[@varname(cv), @varname(init_incidence)]])
@@ -236,11 +239,18 @@ series_plot(
 
 The other series in the model are worth inspecting as a check on the fit.
 The expected load is the total load arriving at the sampling site on a given day, before it is diluted by the flow.
+The outlier spike is taken back off first, because a spike is something the measurement at the sampling site adds and not load anyone shed.
 
 ```julia
+spikes = vec(chn[@varname(outliers.ϵ_t)])
+spike_scale = EpiSewer.example_assumptions().outlier_scale
+shed_load = [
+    (g.expected_y_t .- spike_scale .* e) .* flow
+        for (g, e) in zip(draws, spikes)
+]
+
 series_plot(
-    summarise(draws, g -> g.expected_y_t .* flow, obs_dates);
-    ylabel = "load (gc/day)"
+    summarise(shed_load, identity, obs_dates); ylabel = "load (gc/day)"
 )
 ```
 

@@ -36,13 +36,16 @@ jobs:
     # The README's worked example fits the model inside the docs build, so the
     # build is dominated by sampling rather than by rendering: about 25 minutes
     # locally at the committed settings and longer on a CI runner. The reusable
-    # workflow defaults to 45, which this can exceed. The kit emits this block
-    # from its `docs_timeout` input, between `uses:` and `secrets:` — the
-    # position kept here, so a resync produces no drift. `template-sync.yaml`
-    # passes `docs_timeout = 90`.
+    # workflow defaults to 45, which this can exceed. The README fit uses
+    # EpiSewer's own sampler settings — four chains at 500 warmup and 500
+    # sampling, tree depth 15 — which at the measured cost of about 6.6 seconds
+    # an iteration is close to two hours of sampling before the rest of the
+    # build. The kit emits this block from its `docs_timeout` input, between
+    # `uses:` and `secrets:` — the position kept here, so a resync produces no
+    # drift. `template-sync.yaml` passes `docs_timeout` to match.
     uses: EpiAware/.github/.github/workflows/documentation.yml@8c1e09003b9cf0d2eb3cbec7aa726855bb365ac5
     with:
-      timeout_minutes: 90
+      timeout_minutes: 300
       # `ubuntu-latest` gives four vCPUs and the reusable workflow defaults
       # this to 1, so `MCMCThreads()` in the README fit was running its chains
       # one after another. Four threads runs four chains in the wall-clock time

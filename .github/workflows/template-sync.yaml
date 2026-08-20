@@ -102,7 +102,7 @@ jobs:
               using Pkg
               Pkg.activate(; temp = true); Pkg.add(url = "https://github.com/EpiAware/EpiAwarePackageTools.jl", rev = "main")
               using EpiAwarePackageTools
-              res = EpiAwarePackageTools.update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true, repo = "seabbs/EpiSewer.jl", docs_timeout = 90)
+              res = EpiAwarePackageTools.update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true, repo = "seabbs/EpiSewer.jl", docs_timeout = 300)
               println("re-applied ", length(res.updated), " managed files")
               # Gaps a sync cannot close itself: write-once seeds it cannot
               # extend, and package-owned prose describing a retired standard.
@@ -144,7 +144,7 @@ jobs:
             ci
           body: |
             Automated re-apply of the managed EpiAwarePackageTools standard
-            (`update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true, repo = "seabbs/EpiSewer.jl", docs_timeout = 90)`).
+            (`update("."; ad = true, benchmarks = false, downgrade_compat = true, unregistered_sources = false, freshen_reusable_refs = true, repo = "seabbs/EpiSewer.jl", docs_timeout = 300)`).
 
             Merge to bring this repo's managed infra back in line with the kit.
             Package-owned files (unit tests, `qa_config.jl`, AD scenarios,
@@ -213,7 +213,7 @@ jobs:
                  benchmarks = false,
                  downgrade_compat = true,
                  unregistered_sources = false,
-                 repo = "seabbs/EpiSewer.jl", docs_timeout = 90)'
+                 repo = "seabbs/EpiSewer.jl", docs_timeout = 300)'
 
           2. **Ask the kit for the flexibility.** If \`update\` throws, or it
              overwrites something this package legitimately needs to keep, that
