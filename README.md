@@ -121,6 +121,27 @@ summarystats(chn[[@varname(cv), @varname(init_incidence)]])
 `returned` replays the model over the posterior samples.
 Each draw carries `R_t` on the log scale as `Z_t`, infections as `I_t`, and the expected concentration as `expected_y_t`.
 
+### The posterior predictive
+
+The figures show the posterior predictive concentration, which is what
+EpiSewer plots: its `plot_concentration` defaults to `include_noise = TRUE`.
+The expected concentration alone omits the measurement error, so it is a
+narrower band than the data it is drawn against.
+
+`observation_error` gives the error distribution at an expected value and a
+coefficient of variation, so one draw from it per posterior draw is a
+predictive replicate.
+
+```julia
+using Distributions: rand
+
+cv_draws = vec(chn[:cv])
+predicted = [
+    rand.(observation_error.(Ref(EpiSewer.LogNormalError()), g.expected_y_t, c))
+        for (g, c) in zip(draws, cv_draws)
+]
+```
+
 ### Plotting the results
 
 The figures below share two helpers: quantiles of a generated quantity across the draws, and a median line over its 50% and 95% credible intervals.
@@ -187,7 +208,7 @@ function concentration_plot(df, points)
     )
 end
 
-concentration_plot(summarise(draws, g -> g.expected_y_t, obs_dates), observed)
+concentration_plot(summarise(predicted, identity, obs_dates), observed)
 ```
 
 #### Time-varying effective reproduction number
