@@ -190,6 +190,24 @@ function observation_error(::GammaError, Y_t, σ)
     _reject = Gamma(1.0, Inf)
     (isfinite(Y_t) && isfinite(σ)) || return _reject
     (Y_t > 0 && σ > 0) || return _reject
+    # Guard the standard deviation's *square*, which is what actually breaks.
+    # `check_args = false` defers an invalid pair to materialisation rather
+    # than preventing it, and the conversion to native parameters is
+    # `shape = (mean/sd)²`, `scale = sd²/mean`. So `sd²` overflowing or
+    # underflowing yields a `Gamma` with a non-finite or zero scale, which
+    # throws — from `rand`, `mean` and `native`, but never from `logpdf`, which
+    # short-circuits to `-Inf`. A guard checked against `logpdf` alone
+    # therefore looks correct and still breaks a fit, which is how this reached
+    # a docs build. `LogNormalError` guards the same hazard from one side with
+    # `σ < sqrt(floatmax)`; a gamma needs both sides.
+    # Both native parameters, because they fail from opposite directions: the
+    # scale underflows when the standard deviation is tiny, and the shape
+    # overflows when the coefficient of variation is tiny. Checking either one
+    # alone leaves the other reachable.
+    sd² = (σ * Y_t)^2
+    (isfinite(sd²) && sd² > 0) || return _reject
+    shape = inv(σ^2)
+    (isfinite(shape) && shape > 0) || return _reject
     return reparameterise(Gamma; mean = Y_t, sd = σ * Y_t, check_args = false)
 end
 

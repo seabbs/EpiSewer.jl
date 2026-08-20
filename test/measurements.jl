@@ -271,11 +271,21 @@ end
 # pair instead — the one place this family differs from `LogNormalError`.
 @testitem "GammaError scores -Inf rather than NaN on unusable input" begin
     using EpiSewer
-    using Distributions: logpdf
+    using Distributions: logpdf, mean
 
+    # Extremes reachable from a diverging proposal, not just invalid ones.
+    # The native conversion is `shape = (mean/sd)²` and `scale = sd²/mean`, so
+    # the two fail from opposite directions: the scale underflows when the
+    # standard deviation is tiny, the shape overflows when the coefficient of
+    # variation is tiny. The pair at 0.157 and 2.69e156 is the one that reached
+    # a docs build.
     bad = (
         (Inf, 0.3), (NaN, 0.3), (-1.0, 0.3), (0.0, 0.3),
         (1500.0, -0.3), (1500.0, 0.0), (1500.0, Inf), (1500.0, NaN),
+        (0.15692642939369542, 2.6896620547354515e156),
+        (1500.0, 1.0e160), (1500.0, 1.0e-160), (1500.0, 1.0e-200),
+        (1.0e-300, 0.3), (1.0e300, 0.3), (1.0e-320, 1.0e-320),
+        (1.0e300, 1.0e300), (1.0e-200, 1.0e-200),
     )
     for (Y, cv) in bad
         d = EpiSewer.observation_error(EpiSewer.GammaError(), Y, cv)
@@ -287,5 +297,8 @@ end
         # scores correctly throws the first time a fit reaches a bad point
         # with data missing, which is exactly where it is hardest to see.
         @test rand(d) isa Real
+        # `mean` and `native` throw where `logpdf` short-circuits, so a guard
+        # checked only against the score passes while a fit still breaks.
+        @test mean(d) isa Real
     end
 end
