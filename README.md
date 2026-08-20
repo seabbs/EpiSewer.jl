@@ -27,8 +27,6 @@ wastewater model, built from composable EpiAware components.*
 - Missing days, non-daily sampling and non-detects are part of the likelihood,
   so a sparse series needs no imputation before it is fitted.
 
-The [Model components](https://samabbott.co.uk/EpiSewer.jl/stable/components/model-components) page maps each component of the R model onto the ecosystem piece that provides it, and marks the boundary of the default chain.
-
 ### Derived from EpiSewer
 
 This package is a Julia port of the [EpiSewer](https://github.com/adrian-lison/EpiSewer) R package by Adrian Lison and colleagues. The original model is described in:
@@ -43,6 +41,7 @@ Delay distributions are discretised by double-interval censoring, as in the orig
 ### Data
 
 EpiSewer.jl needs a time series of pathogen concentration measurements and the daily wastewater volume flowing through the sampling site.
+The flow matters because a concentration is a shed load diluted by whatever water passed the site that day.
 The example data are daily SARS-CoV-2 (N1 gene) concentrations in gc/mL and flows in mL/day at the Zurich treatment plant, provided by EAWAG to the public domain.
 
 To show the handling of missing data, we make the series artificially sparse by keeping only the measurements taken on Mondays and Thursdays.
@@ -73,10 +72,9 @@ Estimating transmission from concentrations needs assumptions the data cannot su
 - the load shed per case, which sets the scale of the whole series
 - the scale of infections at the start of the series
 
-The first three travel with the pathogen and are usually taken from the literature.
-The last two are properties of this site and series.
-`EpiSewer.model` asks for all five rather than assuming them, as EpiSewer's own `sewer_assumptions` asks for the first four.
-`example_assumptions` holds the set the EpiSewer README uses for SARS-CoV-2 in Zurich.
+The first three travel with the pathogen and are usually taken from the literature, while the last two are properties of this site and series.
+The `EpiSewer.model` entry point asks for all five rather than assuming them, as EpiSewer's own `sewer_assumptions` asks for the first four.
+For this example, `example_assumptions` holds the set the EpiSewer README uses for SARS-CoV-2 in Zurich.
 
 ```julia
 EpiSewer.example_assumptions()
@@ -86,9 +84,10 @@ The delays are continuous distributions here, and the components that use them d
 
 ### Estimation
 
-`EpiSewer.model` assembles the default model.
-Infections follow a renewal process with a smoothly varying `R_t`.
-They are observed through the incubation period, variation in the load shed between individuals, the load shed per case, the shedding profile, division by the daily flow, outlier spikes, and relative log-normal measurement noise.
+`EpiSewer.model` assembles the default model from those assumptions.
+Infections follow a renewal process with a smoothly varying `R_t`, and an observation chain turns them into a concentration.
+That chain spreads each infection's load over the incubation period and the shedding profile, varies the load shed between individuals, scales by the load shed per case, and divides by the daily flow.
+Outlier spikes and relative log-normal noise then account for what the measurement itself adds.
 
 ```julia
 idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
@@ -102,7 +101,7 @@ n = length(y) + EpiSewer.observation_lead_in(idm)
 mdl = as_turing_model(idm, (y = y, flow = flow), n)
 ```
 
-Fitting is Turing's `NUTS`, over reverse-mode gradients from `Mooncake`, on two chains.
+Fitting uses Turing's `NUTS` with reverse-mode gradients from `Mooncake`, over two chains.
 
 ```julia
 import Mooncake
@@ -116,21 +115,16 @@ draws = vec(returned(mdl, chn))
 summarystats(chn[[@varname(cv), @varname(init_incidence)]])
 ```
 
-`cv` is the coefficient of variation of the measurement noise.
-`init_incidence` is the log of the infections seeding the series.
-`returned` replays the model over the posterior samples.
-Each draw carries `R_t` on the log scale as `Z_t`, infections as `I_t`, and the expected concentration as `expected_y_t`.
+The summary covers two of the fitted parameters: `cv`, the coefficient of variation of the measurement noise, and `init_incidence`, the log of the infections seeding the series.
+The latent series are computed rather than sampled, so `returned` replays the model over the posterior samples to recover them.
+Each draw then carries `R_t` on the log scale as `Z_t`, infections as `I_t`, and the expected concentration as `expected_y_t`.
 
 ### The posterior predictive
 
-The figures show the posterior predictive concentration, which is what
-EpiSewer plots: its `plot_concentration` defaults to `include_noise = TRUE`.
-The expected concentration alone omits the measurement error, so it is a
-narrower band than the data it is drawn against.
+The figures show the posterior predictive concentration rather than the expected concentration, which is what EpiSewer plots, since its `plot_concentration` defaults to `include_noise = TRUE`.
+The expected concentration alone omits the measurement error, so it gives a narrower band than the data it is drawn against.
 
-`observation_error` gives the error distribution at an expected value and a
-coefficient of variation, so one draw from it per posterior draw is a
-predictive replicate.
+`observation_error` gives the error distribution at an expected value and a coefficient of variation, so one draw from it per posterior draw is a predictive replicate.
 
 ```julia
 using Distributions: rand
@@ -223,7 +217,7 @@ series_plot(
 ```
 
 The estimates reach further back than the measurements, because a concentration measured today is mostly a signal of infections some days earlier.
-For the same reason the estimates closest to the present are the most uncertain: only part of the transmission they describe has reached the sampling site.
+The estimates closest to the present are the most uncertain for the same reason, since only part of the transmission they describe has reached the sampling site.
 
 #### Growth rate
 
@@ -251,7 +245,8 @@ series_plot(
 ```
 
 Infections follow a similar trend, ahead of the load and less smooth, because an infected individual starts shedding only after their infection and then sheds over several weeks.
-These are relative rather than absolute infections: their scale depends on the assumed load shed per case, so they should not be read as incidence.
+These are relative rather than absolute infections.
+Their scale depends on the assumed load shed per case, so they should not be read as incidence.
 
 ```julia
 series_plot(summarise(draws, g -> g.I_t, inf_dates); ylabel = "infections")

@@ -423,8 +423,10 @@ function _observation_model(
     )
     # Outliers sit immediately inside the flow division, so the spike lands on
     # the concentration scale where Stan adds it.
-    inner = isnothing(outlier_scale) ? LogNormalError() :
-        MeasurementOutliers(LogNormalError(); scale = outlier_scale)
+    # R's `noise_estimate` defaults to `distribution = "gamma"`, so the gamma
+    # is the family the ported model is scored under.
+    inner = isnothing(outlier_scale) ? GammaError() :
+        MeasurementOutliers(GammaError(); scale = outlier_scale)
     obs = FlowNormalize(inner)
     obs = _delay(obs, residence_dist; D = D_residence, Δd = Δd)
     obs = _delay(obs, shedding_dist; D = D_shedding, Δd = Δd)

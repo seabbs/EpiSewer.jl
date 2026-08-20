@@ -1,10 +1,12 @@
 # [Case surveillance](@id case-surveillance)
 
 Wastewater concentrations and reported cases observe the same infections
-through different instruments.
-Each carries its own delays, its own reporting fraction, and its own noise.
+through different instruments, each with its own delays, its own reporting
+fraction, and its own noise.
+Fitted separately they give two estimates of the same transmission, which then
+have to be reconciled.
 `ComposableTuringIDModels.Split` puts both observation chains on one infection
-process, so the two are fitted together.
+process, so the two are fitted together instead.
 
 ## Data
 
@@ -51,7 +53,6 @@ case_stream = LatentDelay(
 )
 ```
 
-Read it outside in.
 The incubation period puts infections on the symptom-onset timescale, and it
 is the same distribution the wastewater chain uses.
 `Ascertainment` scales by the fraction of infections ever reported, on the log
@@ -175,8 +176,9 @@ draw(
 
 A draw that grows in one stream grows in the other, because both read the same
 infections.
-What differs is the timing and the noise: the case series is smoother, and it
-starts earlier because its delays are shorter.
+What differs is the timing and the noise.
+The case series is smoother, and it starts earlier because its delays are
+shorter.
 
 Across draws, the interval on the expected series spans orders of magnitude,
 which is what a prior on transmission with nothing scored against it gives.

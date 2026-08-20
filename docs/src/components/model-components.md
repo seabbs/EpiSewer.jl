@@ -1,15 +1,15 @@
 # [Model components](@id model-components)
 
-This package replicates the model functionality of the
-[EpiSewer](https://github.com/adrian-lison/EpiSewer) R package — a Bayesian
-generative model for estimating the effective reproduction number `R_t` and
-other transmission indicators from wastewater measurements — using composable
-components from the EpiAware ecosystem
+The [EpiSewer](https://github.com/adrian-lison/EpiSewer) R package is a
+Bayesian generative model that estimates the effective reproduction number
+`R_t` and other transmission indicators from wastewater measurements.
+This package replicates that model functionality using composable components
+from the EpiAware ecosystem
 ([`ComposableTuringIDModels.jl`](https://epiaware.org/ComposableTuringIDModels.jl)
 and [`EpiAwareADTools.jl`](https://epiaware.org/EpiAwareADTools.jl)).
 
 The original EpiSewer model is organised into six modules.
-The table below lists every model component, its role, and the ecosystem component that provides the same functionality.
+The table below lists every model component, its role, and the ecosystem component that provides the same functionality, so a reader coming from the R package can see what has a counterpart here and what does not.
 
 ## Component mapping
 
@@ -17,7 +17,7 @@ The table below lists every model component, its role, and the ecosystem compone
 |---|---|---|---|
 | measurements | `concentrations_observe` | Score the concentration measurements against the expected concentration | An observation error model wrapping the latent expected concentration (`NormalError`, `LogNormalError`) |
 | measurements | `concentrations_observe_partitions` | Score the positive dPCR partition counts with a binomial likelihood instead of the concentration | `DigitalPCRError` in `src/measurements.jl`, a `TransformObservationModel` applying the Poisson partition law `p_t = 1 - exp(-exp(Y_t))` over a `BinomialError` |
-| measurements | `noise_estimate` | Measurement noise as a constant coefficient of variation | `LogNormalError` in `src/measurements.jl`, a `LogNormal` whose real-space mean is the expected concentration and whose sd is `cv · Y_t`, so `cv` is the inferred coefficient of variation |
+| measurements | `noise_estimate` | Measurement noise as a constant coefficient of variation | `GammaError` in `src/measurements.jl`, matching R's `gamma3_lpdf` shape `1/cv²` and rate `1/(Y_t cv²)`. `LogNormalError` is R's log-normal option, same relative-noise contract |
 | measurements | `noise_estimate_constant_var` | Measurement noise as a constant variance | `NormalError` with a shared `std` prior |
 | measurements | `noise_estimate_dPCR` / `noise_estimate_dPCR_params` | Concentration-dependent CV derived from the dPCR partition model, predicting more relative variation at low concentrations | No ecosystem counterpart; this needs a CV that is a function of the expected concentration |
 | measurements | `LOD_assume` / `LOD_estimate_dPCR` | Left-censoring of measurements at the detection limit | `LOD` in `src/measurements.jl`, an `AbstractObservationErrorModel` wrapping an inner error distribution in `Distributions.censored`, with values at the limit scored as a `logcdf`. The limit is assumed rather than derived from the dPCR model |
@@ -36,8 +36,8 @@ The table below lists every model component, its role, and the ecosystem compone
 | forecast | `horizon_assume` | Probabilistic forecast of `R_t`, infections and concentrations | `forecast`, which extends each draw's latent innovations over the horizon and predicts through the observation model |
 | forecast | `damping_assume` | Exponential damping of the forecast `R_t` trend, so extrapolated transmission levels off | No ecosystem counterpart |
 
-R's `noise_estimate` offers four distribution families for the concentration likelihood (gamma by default, then log-normal, truncated normal and normal).
-`LogNormalError` is the log-normal one.
+R's `noise_estimate` offers four distribution families for the concentration likelihood: gamma by default, then log-normal, truncated normal and normal.
+`GammaError` is the default and `LogNormalError` is the log-normal option.
 
 ## Composition
 
@@ -47,7 +47,7 @@ The infection process (`Renewal`), `R_t` smoothing (`RandomWalk`, `HilbertSpaceG
 Two of the wastewater-specific pieces are compositions with no new struct at all.
 Load-per-case calibration is an `Ascertainment` scaling `I_t` by the load shed per case.
 R calibrates that value once outside the sampler and passes it as data, so `model()` takes a number and wraps it in a `FixedIntercept`.
-A prior may be passed instead, which infers it.
+Passing a prior instead infers it.
 The sewer residence time is a `LatentDelay`, and R's default `residence_dist = c(1)` is a point mass at same-day arrival, so an identity convolution.
 
 This package adds seven `ComposableTuringIDModels.jl`-compatible structs.

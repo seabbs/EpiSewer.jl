@@ -6,8 +6,8 @@ A different site, a different pathogen, or a different laboratory protocol
 changes some of them.
 This page works through those changes on a series the defaults were not built
 for, and reads the consequence off the model's prior.
-Nothing here is fitted: what an assumption does to the model is visible in what
-the model generates before it sees a measurement.
+Nothing here is fitted, because what an assumption does to the model is already
+visible in what the model generates before it sees a measurement.
 
 ## Retuning for a new series
 
@@ -165,10 +165,11 @@ converted one.
 
 ## The reproduction number process
 
-`rt` takes any latent model in the ecosystem.
-The link matters as much as the process: `Renewal` exponentiates the path it is
-given, and the default `rt` pre-applies `EpiSewer.softplus_link` so that the
-exponential is undone and `R_t` grows linearly in the latent path.
+`rt` takes any latent model in the ecosystem, but the link matters as much as
+the process does.
+`Renewal` exponentiates the path it is given, and the default `rt` pre-applies
+`EpiSewer.softplus_link` so that the exponential is undone and `R_t` grows
+linearly in the latent path.
 A bare latent model keeps the exponential.
 
 `tuned` is already assembled, so `Accessors.@set` puts a different process on a
@@ -244,7 +245,7 @@ variants = [
         assumptions..., retune..., outlier_scale = nothing
     ),
 ]
-map(v -> nameof(typeof(last(v).infection_model.recurrent_step)), variants)
+nothing # hide
 ```
 
 Dropping the infection noise makes the renewal step deterministic, and the
@@ -286,7 +287,7 @@ draw(
 )
 ```
 
-Dropping the infection noise halves the daily change in infections: what is
+Dropping the infection noise halves the daily change in infections, so what is
 left is the movement `R_t` alone implies.
 Dropping the spikes removes the upper tail of the daily jump in concentration
 entirely, so the largest jump in a draw becomes the largest jump transmission
@@ -316,8 +317,8 @@ end
 
 Ten shedding individuals give a 30% spread on the load, a hundred thousand give
 0.3%.
-This series sits at the second end, so removing the component costs nothing
-here and matters for a small catchment or an early outbreak.
+This series sits at the upper end, so removing the component costs nothing
+here, though it would matter for a small catchment or an early outbreak.
 
 ## Delay inputs
 
@@ -395,8 +396,8 @@ draw(
 
 What the profile costs is easier to see on the chain than on the PMF.
 The same pulse of infections goes into each form, with the load variation and
-the spikes dropped so the delays are all that is left, and what comes out is
-the expected concentration.
+the spikes dropped so that the delays are all that is left.
+What comes out is the expected concentration.
 
 ```@example adapt
 function response(shedding, form; seed = 5)

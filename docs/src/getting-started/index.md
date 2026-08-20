@@ -2,13 +2,15 @@
 
 The home page runs one worked example end to end, from the example data to the
 fitted model.
-This page is about the assembly behind it: the entry point, the two places a
-whole stage can be replaced, and what a replacement does to the model.
+Fitting a series of your own almost always means changing something in that
+model, and changing it means knowing how it was put together.
+This page covers the assembly: the entry point, the two places a whole stage
+can be replaced, and what a replacement does to the model.
 
 ## The one entry point
 
-There is a single front end, `EpiSewer.model`.
-It takes the disease assumptions and returns the assembled model.
+The package has a single front end, `EpiSewer.model`, which takes the disease
+assumptions and returns the assembled model.
 
 ```@example gs
 using EpiSewer, ComposableTuringIDModels
@@ -29,8 +31,8 @@ and the rest of the ecosystem's tooling apply unchanged.
 An `IDModel` pairs an infection process with an observation chain, and both are
 fields.
 `model()`'s `infection_model` and `observation_model` keywords set them
-directly, which is what makes them the swap points: pass either and that whole
-stage is yours.
+directly, which is what makes them the swap points, because passing either
+replaces that whole stage.
 Every other keyword tunes a piece of the default the package builds when you do
 not.
 
@@ -46,7 +48,7 @@ not.
 The observation model reports only its outermost wrapper, because the chain is
 a nesting of modifiers around an error model.
 Each wrapper holds the model it wraps in a field, so walking those fields gives
-the chain.
+the chain from the outside in, in the order the transformations are applied.
 
 ```@example gs
 function observation_chain(m)
@@ -64,11 +66,6 @@ end
 observation_chain(idm.observation_model)
 ```
 
-Read that list outside in and it is the order the transformations are applied.
-The default chain convolves infections with the incubation period, varies the
-load shed between individuals, scales by the load shed per case, convolves with
-the shedding load profile, divides by the daily flow, adds outlier spikes, and
-scores the result with relative log-normal noise.
 The [Public API](@ref public-api) documents each stage this package adds, and
 the [Model components](@ref model-components) page maps them onto the R model.
 
@@ -92,16 +89,15 @@ n = length(y) + lead_in
 ```
 
 The observation-error model right-aligns the observations against whatever
-expected series it is given.
-Passing `n = length(y)` therefore leaves the first `lead_in` observations
-unscored, with nothing to signal it.
-Read `n` back from `observation_lead_in` and every observation is scored.
+expected series it is given, so passing `n = length(y)` silently leaves the
+first `lead_in` observations unscored.
+Taking `n` from `observation_lead_in` instead scores every observation.
 
 ## Drawing from the prior
 
+What the priors imply is worth seeing before any measurement pulls on them.
 Sampling the assembled model with `Prior()` and replaying it with `returned`
-gives the latent series the priors imply, before any measurement has been
-scored.
+gives the latent series they generate on their own.
 Two helpers cover the figures on this page: quantiles of a generated quantity
 across draws, and median lines over their 50% intervals, one colour per model.
 
@@ -166,10 +162,6 @@ replaced on an assembled model instead of rebuilt from the assumptions.
 using Accessors: @set
 
 walk = @set idm.infection_model.rt = RandomWalk()
-(
-    default = nameof(typeof(idm.infection_model.rt)),
-    swapped = nameof(typeof(walk.infection_model.rt)),
-)
 ```
 
 `EpiSewer.model(; assumptions..., rt = RandomWalk())` reaches the same model
@@ -189,11 +181,11 @@ series_plot(
 ```
 
 The random walk's interval is wider from the start and keeps widening as the
-series runs on, because nothing pulls it back.
-The Gaussian processes hold their length scale instead.
-Part of the gap is the link rather than the process.
-The default `rt` puts a softplus on the latent path, and a bare latent model
-keeps the exponential `Renewal` applies.
+series runs on, because nothing pulls it back, whereas the Gaussian processes
+hold their length scale.
+Part of the gap is the link rather than the process, because the default `rt`
+puts a softplus on the latent path while a bare latent model keeps the
+exponential `Renewal` applies.
 [Adapting the model](@ref adapting-the-model) separates the two.
 
 ## Learning more
