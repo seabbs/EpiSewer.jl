@@ -285,21 +285,37 @@ end
 # but takes modifiers only in its positional one, which needs a discretised
 # interval. Re-assembling from the deterministic model's own `gen_int` keeps one
 # discretisation path (ComposableTuringIDModels#269).
-function _infection_model(generation_time, rt, noise, initialisation; D_gen, Δd)
+function _infection_model(
+        generation_time, rt, noise, initialisation, seeding_walk; D_gen, Δd
+    )
     base = Renewal(;
         generation_time = generation_time, rt = rt,
         initialisation = initialisation, D_gen = D_gen, Δd = Δd
     )
-    isnothing(noise) && return base
+    isnothing(noise) && isnothing(seeding_walk) && return base
     base.gen_int isa AbstractVector{<:Real} || throw(
         ArgumentError(
             "an inferred generation time cannot carry an infection-noise " *
-                "modifier: pass `infection_noise = nothing`, or give " *
-                "`infection_model` directly"
+                "modifier or a seeding walk: pass " *
+                "`infection_noise = nothing` and `seeding_walk = nothing`, " *
+                "or give `infection_model` directly"
         )
     )
+    modifiers = isnothing(noise) ? () : (noise,)
+    with_noise = Renewal(
+        base.gen_int, modifiers...; rt = rt, initialisation = initialisation
+    )
+    isnothing(seeding_walk) && return with_noise
+    # Swap the renewal core for the seeding walk, keeping every other field
+    # of the assembled `Renewal`, the already-wrapped `rt` prior included.
+    # This is the same model with a different seeding window. The walk takes
+    # its generation interval and mixing from the core it replaces.
+    step = with_noise.recurrent_step
     return Renewal(
-        base.gen_int, noise; rt = rt, initialisation = initialisation
+        with_noise.gen_int, with_noise.transformation, with_noise.rt,
+        with_noise.initialisation,
+        RenewalStep(_seed_with(seeding_walk, step.core), step.modifiers),
+        with_noise.mixing
     )
 end
 
@@ -442,8 +458,8 @@ end
         initial_infections, residence_dist = nothing, D_gen = 15.0,
         D_shedding = 38.0, D_incubation = 8.0, D_residence = nothing,
         Δd = 1.0, n_gp = 164, rt = _default_rt(; n = n_gp),
-        infection_noise = InfectionNoise(), outlier_scale = nothing,
-        load_cv = 1.0, seeding, infection_model,
+        infection_noise = InfectionNoise(), seeding_walk = nothing,
+        outlier_scale = nothing, load_cv = 1.0, seeding, infection_model,
         observation_model) -> IDModel
 
 Assemble the wastewater model as a `ComposableTuringIDModels.IDModel`
@@ -503,6 +519,14 @@ swap points. The observed series and the daily flow are both data, passed at
   ([`InfectionNoise`](@ref EpiSewer.InfectionNoise)), EpiSewer's
   `infection_noise_estimate()`. Pass `nothing` for a deterministic renewal
   process.
+- `seeding_walk`: the seeding window's shape, EpiSewer's
+  `seeding_estimate_rw()`. `nothing`, the default, keeps the deterministic
+  exponential at the growth rate implied by ``R_0``, with `seeding` setting the
+  window's **newest** entry. A [`SeedingRandomWalk`](@ref
+  EpiSewer.SeedingRandomWalk) replaces that with R's geometric random walk, and
+  moves the anchor: `seeding` then sets the window's **earliest** entry, which
+  is what R's intercept is. The default is unchanged because the two seedings
+  have not been compared on a fit.
 - `initial_infections`, `seeding`: the seeding prior, EpiSewer's
   `seeding_estimate_rw()` intercept. `seeding` is a prior on **log** initial
   infections, defaulting to a `Normal` centred on `log(initial_infections)` with
@@ -546,12 +570,13 @@ function model(;
         n_gp = 164,
         rt = _default_rt(; n = n_gp),
         infection_noise = InfectionNoise(),
+        seeding_walk = nothing,
         initial_infections,
         outlier_scale = nothing,
         load_cv = 1.0,
         seeding = Normal(log(initial_infections), _SEEDING_SPREAD),
         infection_model = _infection_model(
-            generation_time, rt, infection_noise, seeding;
+            generation_time, rt, infection_noise, seeding, seeding_walk;
             D_gen = D_gen, Δd = Δd
         ),
         observation_model = _observation_model(

@@ -375,3 +375,189 @@ end
         @test rt === Tuple{Float64, Int}
     end
 end
+
+# `SeedingRandomWalk` is checked against R's seeding block:
+# `iota[1:(G+se)] = exp(random_walk([iota_log_seed_intercept]',
+# iota_log_ar_noise, 0))`
+# with `random_walk(s, i, 0) = cumulative_sum(append_row(s[1], i))`, the
+# truncated-normal step-size prior, and the non-centred draw R's
+# `vector<multiplier=iota_log_seed_sd[1]>` declaration expresses.
+
+@testitem "SeedingRandomWalk matches R's cumulative-sum seeding" begin
+    using EpiSewer
+    using ComposableTuringIDModels: renewal_init_window
+    using LinearAlgebra: I
+
+    rev = reverse([0.1, 0.2, 0.3, 0.25, 0.15])
+    innov = [0.1, -0.2, 0.3, 0.05]
+    draws = EpiSewer.SeedingRandomWalkDraws(rev, I, innov)
+    I₀ = 42.0
+    # `r`, the growth rate implied by R₀, is ignored, so the window must not
+    # move with it: the walk replaces the exponential, as it does in R.
+    for r in (0.0, 0.7, -0.3)
+        window = renewal_init_window(draws, I₀, r, 5)
+        @test window ≈ I₀ .* exp.(cumsum(vcat(0.0, innov)))
+        @test length(window) == 5
+        @test all(window .> 0)
+        # R's intercept is `iota[1]`: the EARLIEST seeded day, not the newest.
+        @test window[1] == I₀
+    end
+end
+
+@testitem "SeedingRandomWalk with no innovation is a flat window" begin
+    using EpiSewer
+    using ComposableTuringIDModels: as_turing_model, renewal_init_window
+    using ComposableTuringIDModels: ConstantRenewalStep
+
+    # A random walk with a zero step size is a flat line, whatever standard
+    # normals were drawn, so the window collapses onto the intercept.
+    rev = reverse([0.1, 0.2, 0.3, 0.25, 0.15])
+    core = EpiSewer._seed_with(
+        EpiSewer.SeedingRandomWalk(; step_size = 0.0), ConstantRenewalStep(rev)
+    )
+    draws = as_turing_model(core, 30)()
+    @test all(iszero, draws.innovations)
+    @test renewal_init_window(draws, 42.0, 0.7, 5) == fill(42.0, 5)
+end
+
+@testitem "SeedingRandomWalk takes R's step-size prior" begin
+    using EpiSewer
+    using Distributions: Normal, truncated
+    using ComposableTuringIDModels: as_turing_model, ConstantRenewalStep
+    using Random: Xoshiro
+
+    # `rel_change_prior_mu = 0.05`, `rel_change_prior_sigma = 0.025`, scored as
+    # `iota_log_seed_sd[1] ~ normal(mu, sigma) T[0, ]`.
+    @test EpiSewer.SeedingRandomWalk().step_size ==
+        truncated(Normal(0.05, 0.025), 0.0, Inf)
+
+    rev = reverse([0.1, 0.2, 0.3, 0.25, 0.15])
+    slots(w) = string.(
+        collect(
+            keys(
+                rand(
+                    Xoshiro(1),
+                    as_turing_model(
+                        EpiSewer._seed_with(w, ConstantRenewalStep(rev)), 30
+                    )
+                )
+            )
+        )
+    )
+    # The walk is `len_gen_int - 1` non-centred standard normals either way.
+    @test any(contains("seed_raw"), slots(EpiSewer.SeedingRandomWalk()))
+    # A prior on the step size adds a slot; a fixed scalar must not, as R's
+    # fixed infection-noise overdispersion does not.
+    @test any(contains("seed_sd"), slots(EpiSewer.SeedingRandomWalk()))
+    fixed = EpiSewer.SeedingRandomWalk(; step_size = 0.05)
+    @test !any(contains("seed_sd"), slots(fixed))
+end
+
+@testitem "SeedingRandomWalk rejects the shapes it does not seed" begin
+    using EpiSewer
+    using ComposableTuringIDModels: renewal_init_window
+    using LinearAlgebra: I
+
+    rev = reverse([0.1, 0.2, 0.3, 0.25, 0.15])
+    draws = EpiSewer.SeedingRandomWalkDraws(rev, I, zeros(4))
+    # The walk spans its own generation interval, not some other one.
+    @test_throws DimensionMismatch renewal_init_window(draws, 42.0, 0.0, 7)
+    # One walk cannot seed several strata without silently tying them.
+    @test_throws ArgumentError renewal_init_window(draws, [1.0, 2.0], 0.0, 5)
+    # An unresolved core still carries its priors, so it has no walk to seed
+    # from.
+    spec = EpiSewer.SeedingRandomWalk()
+    @test_throws ErrorException renewal_init_window(spec, 42.0, 0.0, 5)
+    # And a specification does not know how long its walk is.
+    @test_throws ArgumentError EpiSewer._n_seed_innovations(spec.rev_gen_int)
+end
+
+# As for `InfectionNoise`: the renewal scan runs this inside the differentiated
+# log-density, so an abstract type anywhere on the resolved core is paid on
+# every gradient. `isconcretetype` is the wrong predicate for a field that is a
+# `Type{...}`; `isdispatchelem` asks whether a method can be selected at compile
+# time, which is what matters.
+@testitem "the seeding walk's resolved core infers concretely" begin
+    using EpiSewer
+    using ComposableTuringIDModels: renewal_init_window, renewal_init_state,
+        get_state
+    using LinearAlgebra: I
+
+    rev = reverse([0.1, 0.2, 0.3, 0.25, 0.15])
+    draws = EpiSewer.SeedingRandomWalkDraws(rev, I, randn(4))
+    for f in fieldnames(typeof(draws))
+        ft = fieldtype(typeof(draws), f)
+        @test Base.isdispatchelem(ft)
+        @test !(ft isa UnionAll)
+    end
+
+    wt = only(
+        Base.return_types(
+            renewal_init_window, (typeof(draws), Float64, Float64, Int)
+        )
+    )
+    @test isconcretetype(wt)
+    @test wt === Vector{Float64}
+
+    state = renewal_init_state(draws, 42.0, 0.7, 5)
+    st = only(Base.return_types(draws, (typeof(state), Float64)))
+    @test isconcretetype(st)
+    @test st === typeof(state)
+    @test only(
+        Base.return_types(
+            get_state, (typeof(draws), typeof(state), Vector{typeof(state)})
+        )
+    ) === Vector{Float64}
+end
+
+@testitem "model() selects the seeding walk without changing the default" begin
+    using EpiSewer
+    using ComposableTuringIDModels: as_turing_model, ConstantRenewalStep,
+        UncertainDelay
+    using Distributions: LogNormal, Normal, truncated
+    using Random: Xoshiro
+
+    a = EpiSewer.example_assumptions()
+    core(; kw...) =
+        EpiSewer.model(; a..., kw...).infection_model.recurrent_step.core
+    # The deterministic exponential stays the default until the two seedings
+    # have been compared on a fit.
+    @test core() isa ConstantRenewalStep
+    @test core(; seeding_walk = EpiSewer.SeedingRandomWalk()) isa
+        EpiSewer.SeedingRandomWalk
+    # It composes with a modifier-free renewal too, where `RenewalStep`
+    # delegates straight to its core.
+    @test core(;
+        seeding_walk = EpiSewer.SeedingRandomWalk(), infection_noise = nothing
+    ) isa EpiSewer.SeedingRandomWalk
+
+    d = EpiSewer.example_data()
+    y = d.measurements.concentration
+    flow = Vector{Float64}(d.flows.flow)
+    n_params(; kw...) = begin
+        idm = EpiSewer.model(; a..., kw...)
+        mdl = as_turing_model(
+            idm, (y = y, flow = flow),
+            length(y) + EpiSewer.observation_lead_in(idm)
+        )
+        sum(length, values(rand(Xoshiro(1), mdl)))
+    end
+    # `D_gen = 15` with the lag-0 bin dropped gives a 14-day seeding window, so
+    # 13 innovations, plus the step size when it carries a prior.
+    base = n_params()
+    @test n_params(; seeding_walk = EpiSewer.SeedingRandomWalk()) == base + 14
+    @test n_params(;
+        seeding_walk = EpiSewer.SeedingRandomWalk(; step_size = 0.05)
+    ) == base + 13
+
+    # An inferred generation time builds its step per draw, so there is no core
+    # to swap — the same restriction the infection-noise modifier has.
+    gen = UncertainDelay(
+        LogNormal, [Normal(1.0, 0.2), truncated(Normal(0.5, 0.2), 0, Inf)];
+        D = 15.0
+    )
+    @test_throws ArgumentError EpiSewer.model(;
+        a..., generation_time = gen,
+        seeding_walk = EpiSewer.SeedingRandomWalk()
+    )
+end

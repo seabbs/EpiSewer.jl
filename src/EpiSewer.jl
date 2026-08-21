@@ -34,15 +34,18 @@ using Distributions: cdf, censored, ContinuousDistribution, Gamma,
 using Dates: Date
 using ComposableTuringIDModels: ComposableTuringIDModels,
     AbstractObservationErrorModel, AbstractObservationModel,
-    AbstractRenewalModifier, Ascertainment, BinomialError,
+    AbstractConstantRenewalStep, AbstractRenewalModifier, Ascertainment,
+    BinomialError,
     CombineLatentModels, FixedIntercept, HalfNormal, HilbertSpaceGP, IID,
     LatentDelay, Matern32Kernel,
-    NormalError, PriorLike, Renewal, TransformLatentModel,
+    NormalError, PriorLike, Renewal, RenewalStep, renewal_foi,
+    TransformLatentModel,
     TransformObservationModel,
     UncertainDelay, IDModel
 import ComposableTuringIDModels: as_turing_model, as_turing_submodel,
     generate_observation_error_priors, observation_error,
-    modifier_init_state, apply_modifier
+    modifier_init_state, apply_modifier, get_state, renewal_init_state,
+    renewal_init_window
 using EpiAwareADTools: EpiAwareADTools
 using ReparameterisedDistributions: reparameterise
 using CSV: CSV
@@ -70,5 +73,6 @@ public gp_length_scale, crude_initial_infections, softplus_link
 public GammaError, LogNormalError, LOD, DigitalPCRError, MeasurementOutliers
 public FlowNormalize
 public InfectionNoise, InfectionNoiseDraws, LoadVariation
+public SeedingRandomWalk, SeedingRandomWalkDraws
 
 end
