@@ -524,9 +524,9 @@ swap points. The observed series and the daily flow are both data, passed at
   exponential at the growth rate implied by ``R_0``, with `seeding` setting the
   window's **newest** entry. A [`SeedingRandomWalk`](@ref
   EpiSewer.SeedingRandomWalk) replaces that with R's geometric random walk, and
-  moves the anchor: `seeding` then sets the window's **earliest** entry, which
-  is what R's intercept is. The default is unchanged because the two seedings
-  have not been compared on a fit.
+  moves the anchor. `seeding` then sets the window's **earliest** entry, which
+  is where R's intercept sits. The default is unchanged because the two
+  seedings have not been compared on a fit.
 - `initial_infections`, `seeding`: the seeding prior, EpiSewer's
   `seeding_estimate_rw()` intercept. `seeding` is a prior on **log** initial
   infections, defaulting to a `Normal` centred on `log(initial_infections)` with

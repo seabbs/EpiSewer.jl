@@ -286,10 +286,10 @@ The parameterisation is **non-centred**: the sampled quantity is the standard
 normal ``\tilde{\epsilon}_t`` and the step size is applied afterwards, which is
 what R's `vector<multiplier=iota_log_seed_sd[1]>` declaration does.
 
-The growth rate implied by ``R_0`` is **not** used: the walk is what determines
-the shape of the window, so the seeding phase no longer has to be an exponential
-at the initial reproduction number. R does the same — nothing in its seeding
-block reads `R[1]`.
+The growth rate implied by ``R_0`` is **not** used. The walk determines the
+shape of the window, so the seeding phase no longer has to be an exponential at
+the initial reproduction number. R does the same. Nothing in its seeding block
+reads `R[1]`.
 
 !!! note "`initial_infections` anchors the *earliest* seeded day"
     This changes what `model()`'s `seeding` prior (and so `initial_infections`)
@@ -297,14 +297,15 @@ block reads `R[1]`.
     seeding puts ``I_0`` at its **newest** entry, decaying backwards from there.
     R's intercept is `iota[1]`, the **earliest** entry, and its
     `initial_cases_crude` is documented as the cases at the *start* of the time
-    series. This core follows R: with all innovations at zero the window is
-    constant at ``I_0``, and with them non-zero ``I_0`` is its first element.
+    series. This core follows R. With all innovations at zero the window is
+    constant at ``I_0``, and with non-zero innovations ``I_0`` is its first
+    element.
 
-The walk spans the generation interval. R's seeding phase is `G + se` days, and
-`se` extends it when the series opens with a run of non-detects longer than the
-generation interval, so the two agree whenever `se = 0`. That is every series
-reaching three consecutive detects within its first `G` days, the shipped
-example among them.
+The walk spans the generation interval. R's seeding phase is `G + se` days,
+where `se` extends it when the series opens with a run of non-detects longer
+than the generation interval. The two agree whenever `se = 0`. That is every
+series reaching three consecutive detects within its first `G` days, the
+shipped example among them.
 
 Single-series only. A stratified renewal would need one walk per stratum, which
 this does not provide.
@@ -317,7 +318,7 @@ this does not provide.
   `nothing` interval.
 - `step_size`: the prior for ``\sigma``, or a fixed scalar. Defaults to R's
   `truncated(Normal(0.05, 0.025), 0, Inf)`, from `rel_change_prior_mu = 0.05`
-  and `rel_change_prior_sigma = 0.025` — about a 5% relative change per day. A
+  and `rel_change_prior_sigma = 0.025`, about a 5% relative change per day. A
   fixed scalar costs no parameter.
 
 # Example
