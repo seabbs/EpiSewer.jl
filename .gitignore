@@ -60,3 +60,5 @@ worktrees/
 # Package-specific ignore rules (preserved across updates).
 .resources/
 .pi/
+# Same as the managed `worktrees/` rule, for a dotted directory.
+.worktrees/

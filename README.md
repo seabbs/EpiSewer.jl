@@ -105,6 +105,7 @@ Fitting uses Turing's `NUTS` with reverse-mode gradients from `Mooncake`.
 The settings are EpiSewer's own: four chains, 500 warmup and 500 sampling iterations, and a tree depth limit of 15.
 That limit matters more than it looks.
 This model wants trajectories of about ten doublings, so Turing's default of 10 truncates every one of them and the chains barely move.
+Chains start from the prior rather than from Turing's uniform default, because a prior draw is inside the model's support and a uniform one on the unconstrained scale is usually not.
 
 ```julia
 import Mooncake
@@ -112,7 +113,8 @@ using MCMCChains: summarystats
 
 chn = sample(
     mdl, NUTS(0.9; adtype = Turing.AutoMooncake(), max_depth = 15),
-    MCMCThreads(), 500, 4; num_warmup = 500, progress = false
+    MCMCThreads(), 500, 4;
+    num_warmup = 500, initial_params = InitFromPrior(), progress = false
 )
 draws = vec(returned(mdl, chn))
 summarystats(chn[[@varname(cv), @varname(init_incidence)]])
