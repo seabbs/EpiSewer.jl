@@ -87,7 +87,7 @@ The delays are continuous distributions here, and the components that use them d
 `EpiSewer.model` assembles the default model from those assumptions.
 Infections follow a renewal process with a smoothly varying `R_t`, and an observation chain turns them into a concentration.
 That chain spreads each infection's load over the incubation period and the shedding profile, varies the load shed between individuals, scales by the load shed per case, and divides by the daily flow.
-Outlier spikes and relative log-normal noise then account for what the measurement itself adds.
+Outlier spikes and relative gamma noise then account for what the measurement itself adds.
 
 ```julia
 idm = EpiSewer.model(; EpiSewer.example_assumptions()...)
@@ -136,7 +136,7 @@ using Distributions: rand
 
 cv_draws = vec(chn[:cv])
 predicted = [
-    rand.(observation_error.(Ref(EpiSewer.LogNormalError()), g.expected_y_t, c))
+    rand.(observation_error.(Ref(EpiSewer.GammaError()), g.expected_y_t, c))
         for (g, c) in zip(draws, cv_draws)
 ]
 ```

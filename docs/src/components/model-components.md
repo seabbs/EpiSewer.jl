@@ -68,19 +68,20 @@ negative-binomial variance at the renewal expectation and feeding the draw
 forward through the scan.
 `LoadVariation` draws the realised shedding load around the expected one, with
 the variance of a sum of individual loads.
-`SeedingRandomWalk` is a renewal core, replacing the deterministic exponential
-the seeding window is otherwise filled with by a random walk on log infections.
+`SeedingRandomWalk` is a renewal core, filling the seeding window with a random
+walk on log infections rather than the deterministic exponential.
 
 `InfectionNoise` resolves to an `InfectionNoiseDraws` once its standard normals
 are drawn, and `SeedingRandomWalk` to a `SeedingRandomWalkDraws` once its walk
-is drawn, which are the forms the renewal scan steps through.
+is drawn.
+Those are the forms the renewal scan steps through.
 
 ## The default chain and where it differs from R
 
 `EpiSewer.model()` composes a `Renewal` infection process, with a summed
 Gaussian-process `R_t` prior and stochastic infections, observed through the
 chain incubation delay → individual-level load variation → per-case load →
-shedding delay → flow division → outlier spikes → log-normal noise.
+shedding delay → flow division → outlier spikes → gamma noise.
 The [getting started](@ref getting-started) page reads both stages off the
 assembled model and shows how to replace either.
 
@@ -89,9 +90,10 @@ random walk on log infections across the seeding phase, whose length is the
 generation interval's horizon.
 `SeedingRandomWalk` is that walk, a renewal core overriding
 `renewal_init_window`, selected with `model(seeding_walk = SeedingRandomWalk())`.
-It is not the default: the default seeding stays the exponential at the rate
-implied by `R₀` until the two have been compared on a fit.
-Switching moves what `model()`'s `seeding` prior refers to, from the newest
+It is not the default.
+The default seeding stays the exponential at the rate implied by `R₀` until the
+two have been compared on a fit.
+Switching moves what `model()`'s `seeding` prior refers to from the newest
 seeded day to the earliest, which is where R's intercept sits.
 
 The walk spans the generation interval.
