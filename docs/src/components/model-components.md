@@ -94,6 +94,13 @@ implied by `R₀` until the two have been compared on a fit.
 Switching moves what `model()`'s `seeding` prior refers to, from the newest
 seeded day to the earliest, which is where R's intercept sits.
 
+The walk spans the generation interval.
+R's seeding phase is `G + se` days, where `se` extends it when the series opens
+with a run of non-detects longer than the generation interval.
+The two agree whenever `se = 0`, which holds for every series reaching three
+consecutive detects within its first `G` days, the shipped example among them.
+Extending the window needs a change to `Renewal` rather than to the core.
+
 R's `R_estimate_gp` sums two Matérn-3/2 GPs, a short-term one at 21 ± 3.5 days
 with magnitude 0.125 and a long-term one at 84 ± 7 days with magnitude 0.25, then
 maps the sum through an `inv_softplus` link.
