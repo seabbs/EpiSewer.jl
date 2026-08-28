@@ -43,7 +43,7 @@ jobs:
     # build. The kit emits this block from its `docs_timeout` input, between
     # `uses:` and `secrets:` — the position kept here, so a resync produces no
     # drift. `template-sync.yaml` passes `docs_timeout` to match.
-    uses: EpiAware/.github/.github/workflows/documentation.yml@b96a45c468c1d80a29334426a1a4f3b0c04bea7e
+    uses: EpiAware/.github/.github/workflows/documentation.yml@2c7ce73459772f11dad46ac7f456e35f0d296faf
     with:
       timeout_minutes: 300
       # `ubuntu-latest` gives four vCPUs and the reusable workflow defaults
